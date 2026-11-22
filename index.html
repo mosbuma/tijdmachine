@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>Tijdreis</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #1c1916;
+      --paper: #f3ecdf;
+      --field: #faf6ef;
+      --muted: #b5a894;
+      --line: #3a332c;
+      --surface: #2a241e;
+      --red: #c4492c;
+      --red-dark: #9d351c;
+      --radius: 4px;
+    }
+
+    * { box-sizing: border-box; }
+
+    [hidden] { display: none !important; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior-x: none;
+    }
+
+    body {
+      margin: 0;
+      height: 100dvh;
+      background: var(--ink);
+      color: var(--paper);
+      font: 16px/1.45 system-ui, "Segoe UI", "Helvetica Neue", sans-serif;
+    }
+
+    #fit {
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      container-type: inline-size;
+    }
+
+    header, form, .transport {
+      width: min(1100px, calc(100% - 32px));
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: end;
+      padding: 12px 0 10px;
+      flex: 0 0 auto;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: Palatino, "Palatino Linotype", "Times New Roman", serif;
+      font-size: 32px;
+      font-weight: 500;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    #status {
+      margin: 0;
+      max-width: 26rem;
+      text-align: right;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    #setup-header:has(.title[hidden]) {
+      justify-content: flex-start;
+    }
+
+    #setup-header:has(.title[hidden]) #status {
+      max-width: none;
+      text-align: left;
+    }
+
+    form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 12px;
+      align-items: end;
+      padding: 10px 0 8px;
+      flex: 0 0 auto;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    label.place { flex: 1 1 100%; }
+
+    .place-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .place-row input { flex: 1 1 auto; width: 100%; }
+
+    #search { flex: 0 0 auto; }
+
+    label.check {
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      color: var(--paper);
+      font-size: 14px;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    label.check input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      padding: 0;
+      accent-color: var(--red);
+    }
+
+    input, select, button {
+      font: inherit;
+      font-size: 15px;
+      line-height: 1.2;
+      color: var(--ink);
+      background: var(--field);
+      border: 1px solid #d4cabc;
+      border-radius: var(--radius);
+      padding: 9px 12px;
+    }
+
+    input:focus, select:focus, button:focus-visible {
+      outline: 2px solid var(--red);
+      outline-offset: 1px;
+    }
+
+    input[readonly] {
+      cursor: default;
+      color: #6d6256;
+      background: #ebe3d6;
+    }
+
+    input[type="number"] { width: 96px; }
+    #coords { width: 168px; }
+    #zoom { width: 72px; }
+    #map-year, #from, #to { width: 110px; }
+
+    .stage-wrap {
+      position: relative;
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+    }
+
+    .wipe-bars {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .wipe-bars[hidden] { display: none; }
+
+    .layer-bar {
+      position: absolute;
+      width: 28px;
+      pointer-events: auto;
+      touch-action: none;
+      cursor: ew-resize;
+      background: transparent;
+      border: none;
+    }
+
+    .layer-bar::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      margin-left: -1px;
+      background: rgba(243, 236, 223, 0.85);
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.35);
+      pointer-events: none;
+    }
+
+    .layer-thumb {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      min-width: 34px;
+      height: 34px;
+      padding: 0 6px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: -0.08em;
+      color: var(--ink);
+      background: rgba(243, 236, 223, 0.96);
+      border: 1px solid #c9bfb1;
+      box-shadow: 0 1px 6px rgba(28, 25, 22, 0.4);
+      pointer-events: none;
+    }
+
+    button {
+      cursor: pointer;
+      background: #d9d0c2;
+      border-color: #c9bfb1;
+    }
+
+    button:hover:not(:disabled) { background: #fff; }
+    button:disabled { cursor: default; opacity: 0.45; }
+
+    button.primary {
+      background: var(--red);
+      color: white;
+      border-color: var(--red-dark);
+    }
+
+    button.primary:hover:not(:disabled) { background: var(--red-dark); }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    button[hidden] { display: none; }
+
+    #setup-fields { display: contents; }
+
+    #locked-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 0 0 auto;
+    }
+
+    .locked-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      min-width: 0;
+      font-family: Palatino, "Palatino Linotype", "Times New Roman", serif;
+      font-size: 26px;
+      font-weight: 500;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    form.is-locked {
+      width: max-content;
+      max-width: none;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 10px 14px;
+    }
+
+    form.is-locked .locked-title,
+    form.is-locked .check,
+    form.is-locked #reset {
+      flex-shrink: 0;
+    }
+
+    form.is-locked .check { white-space: nowrap; }
+
+    #reset { flex: 0 0 auto; }
+
+    .stage {
+      width: min(1100px, calc(100% - 32px));
+      margin: 0 auto;
+      background: var(--surface);
+      padding: 8px;
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border-radius: var(--radius);
+    }
+
+    canvas {
+      display: block;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
+      min-width: 0;
+      min-height: 0;
+      background: #e7dcc4;
+      touch-action: auto;
+      border-radius: 2px;
+    }
+
+    canvas.interactive {
+      cursor: grab;
+      touch-action: none;
+    }
+
+    canvas.interactive.dragging { cursor: grabbing; }
+
+    .transport {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 14px;
+      align-items: center;
+      padding: 10px 0 12px;
+      flex: 0 0 auto;
+      border-top: 1px solid var(--line);
+      touch-action: none;
+    }
+
+    .playline {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .bars {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .playbar {
+      display: flex;
+      height: 8px;
+      gap: 1px;
+      background: var(--surface);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .playbar[hidden] { display: none; }
+
+    .playbar i { flex: 1 1 0; min-width: 1px; }
+    .playbar i.wait { background: #3a332c; }
+    .playbar i.grey { background: #8d8478; }
+    .playbar i.red { background: var(--red); }
+    .playbar i.green { background: #3c8f4e; }
+
+    .playbar i { cursor: default; }
+
+    #scrub {
+      width: 100%;
+      height: 18px;
+      margin: 0;
+      padding: 0;
+      accent-color: var(--red);
+      border: 0;
+      background: transparent;
+      touch-action: none;
+    }
+
+    .transport > label { display: none; }
+
+    .transport-controls {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .transport-controls button,
+    .transport-controls select {
+      height: 40px;
+    }
+
+    #hold {
+      min-width: 6.5rem;
+      padding-left: 10px;
+      padding-right: 28px;
+    }
+
+    button.linkish {
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+      border: 0;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    button.linkish:hover:not(:disabled) {
+      background: transparent;
+      color: var(--paper);
+    }
+
+    #help-open {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--muted);
+    }
+
+    #help-open:hover:not(:disabled) {
+      background: transparent;
+      color: var(--paper);
+    }
+
+    dialog {
+      width: min(38rem, calc(100% - 32px));
+      max-height: calc(100dvh - 24px);
+      overflow: auto;
+      border: 0;
+      border-radius: var(--radius);
+      padding: 22px 26px 18px;
+      background: var(--paper);
+      color: var(--ink);
+    }
+
+    @container (max-width: 720px) {
+      header, form, .transport, .stage {
+        width: calc(100% - 16px);
+      }
+
+      header {
+        flex-wrap: wrap;
+        gap: 6px 12px;
+        align-items: center;
+        padding-top: 8px;
+      }
+
+      #status {
+        flex: 1 1 12rem;
+        max-width: none;
+        text-align: left;
+      }
+
+      form { gap: 8px 10px; }
+
+      .transport {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding-top: 8px;
+      }
+
+      .playline { flex: 1 1 100%; }
+
+      .transport-controls { flex-wrap: wrap; }
+    }
+
+    dialog::backdrop { background: rgba(28, 25, 22, 0.72); }
+
+    dialog h2 {
+      margin: 0 0 12px;
+      font-family: Palatino, "Palatino Linotype", "Times New Roman", serif;
+      font-size: 26px;
+      font-weight: 500;
+    }
+
+    dialog p { margin: 0 0 10px; line-height: 1.5; }
+
+    .dialog-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    dialog .linkish { color: #6d6256; }
+    dialog .linkish:hover:not(:disabled) { color: var(--ink); background: transparent; }
+  </style>
+</head>
+<body>
+  <div id="fit">
+  <header id="setup-header">
+    <div class="title">
+      <h1>Tijdreis</h1>
+      <button id="help-open" type="button" aria-label="Hulp">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"></circle>
+          <path d="M9.2 9.3a2.8 2.8 0 1 1 3.5 2.6c-.7.3-1.1.8-1.1 1.5V14.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+          <circle cx="11.6" cy="17.2" r="0.9" fill="currentColor"></circle>
+        </svg>
+      </button>
+    </div>
+    <p id="status">Kaart openen…</p>
+  </header>
+
+  <form id="form">
+    <div id="setup-fields">
+    <label class="place">Plaats
+      <span class="place-row">
+        <input id="place" type="text" spellcheck="false" autocomplete="off" placeholder="Adres of coördinaten">
+        <button id="search" type="button">Zoeken</button>
+      </span>
+    </label>
+    <label>Jaar
+      <select id="map-year"></select>
+    </label>
+    <label>Coördinaten
+      <input id="coords" type="text" readonly tabindex="-1" aria-readonly="true">
+    </label>
+    <label>Zoom
+      <input id="zoom" type="text" readonly tabindex="-1" aria-readonly="true">
+    </label>
+    <label>Van
+      <select id="from"></select>
+    </label>
+    <label>Tot
+      <select id="to"></select>
+    </label>
+    <div class="actions">
+      <button class="primary" id="load" type="submit">Laden</button>
+    </div>
+    </div>
+    <div id="locked-bar" hidden>
+      <p class="locked-title"><span id="locked-label">Tijdreis</span></p>
+      <button id="reset" type="button">Verplaatsen</button>
+    </div>
+    <label class="check"><input id="linear" type="checkbox">Lineaire tijd</label>
+    <label class="check"><input id="satellite" type="checkbox">Satelliet</label>
+  </form>
+
+  <div class="stage" id="stage" role="application" aria-label="Kaart">
+    <div class="stage-wrap">
+      <canvas id="map" width="1280" height="720" aria-label="Kaart"></canvas>
+      <div class="wipe-bars" id="wipe-bars" hidden>
+        <div class="layer-bar" id="layer-bar" role="slider" aria-label="Kaart en satelliet" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="1">
+          <div class="layer-thumb" id="layer-thumb" aria-hidden="true"><span>←</span><span>→</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="transport" id="transport" hidden>
+    <div class="playline">
+      <div class="bars">
+        <div id="mapbar" class="playbar" role="img" aria-label="Voortgang kaart" hidden></div>
+        <div id="satbar" class="playbar" role="img" aria-label="Voortgang satelliet" hidden></div>
+      </div>
+      <input id="scrub" type="range" min="0" max="0" value="0" hidden disabled aria-label="Jaar">
+    </div>
+    <div class="transport-controls" id="transport-controls" hidden>
+      <button id="play" type="button" disabled>Afspelen</button>
+      <select id="hold" aria-label="Tempo">
+        <option value="400">snel</option>
+        <option value="800" selected>normaal</option>
+        <option value="1500">langzaam</option>
+      </select>
+      <button id="download" type="button" disabled>WebM</button>
+      <button id="zip" type="button" disabled title="Map met viewer en beelden. Uitpakken en index.html openen.">Zip</button>
+    </div>
+  </div>
+
+  <span id="year" hidden aria-hidden="true"></span>
+  </div>
+
+  <dialog id="help">
+    <h2>Zo gebruik je Tijdreis</h2>
+    <p>Zoek een plaats om het nieuwste jaar, zoom 9 en het volledige jaarbereik in te stellen. Verplaatst de zoekopdracht de kaart, dan wordt een geladen film gereset.</p>
+    <p>Sleep de kaart en zoom met een knijpbeweging of met scrollen, kies daarna Laden. Dat vergrendelt het beeld. Verplaatsen maakt het weer vrij; de volgende pan of zoom wist opgeslagen tegels.</p>
+    <p>Na het laden: sleep de verticale scheidslijn op de kaart links/rechts. Links staat de gekozen laag (Satelliet of Kaart), rechts de andere. De tijdbalk eronder loopt door de jaren; beide lagen blijven zichtbaar volgens die scheiding. Ontbreekt een beeld, dan blijft het vorige staan, of je ziet een doorkruist pictogram als er niets eerder is.</p>
+    <p>Plaats, jaar en de laatste download worden in deze browser bewaard. Met lineaire tijd krijgt elk jaar de volledige duur. Zonder dat: een nieuw beeld de volle duur, een herhaling een kwart. Gelijk ogende bladen worden niet opnieuw opgehaald.</p>
+    <p>WebM neemt de film op. Zip bewaart de kant-en-klare beelden plus één bladzijde: uitpakken en index.html openen. Afspelen, de tijdbalk en de scheiding tussen kaart en satelliet werken dan zonder internet. De losse tegels zitten er niet in.</p>
+    <div class="dialog-actions">
+      <button id="forget" class="linkish" type="button">Vergeet opgeslagen tegels</button>
+      <button id="help-close" class="primary" type="button">Sluiten</button>
+    </div>
+  </dialog>
+
+  <script src="app.js?v=35"></script>
+</body>
+</html>
