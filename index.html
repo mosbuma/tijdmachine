@@ -5,6 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Tijdreis</title>
+  <meta name="description" content="Eén plek in Nederland door de jaren heen: historische kaarten van het Kadaster en luchtfoto's, afgespeeld als film.">
+  <meta name="theme-color" content="#1c1916">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="nl_NL">
+  <meta property="og:title" content="Tijdreis">
+  <meta property="og:description" content="Eén plek in Nederland door de jaren heen: historische kaarten van het Kadaster en luchtfoto's, afgespeeld als film.">
+  <meta property="og:image" content="og.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Tijdreis: historische kaarten en luchtfoto's van één plek.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tijdreis">
+  <meta name="twitter:description" content="Eén plek in Nederland door de jaren heen: historische kaarten van het Kadaster en luchtfoto's, afgespeeld als film.">
+  <meta name="twitter:image" content="og.jpg">
+  <meta name="twitter:image:alt" content="Tijdreis: historische kaarten en luchtfoto's van één plek.">
   <style>
     :root {
       color-scheme: dark;
@@ -47,7 +63,7 @@
       container-type: inline-size;
     }
 
-    header, form, .transport {
+    header, form, #load-progress, .transport {
       width: min(1100px, calc(100% - 32px));
       margin-left: auto;
       margin-right: auto;
@@ -297,13 +313,62 @@
 
     form.is-locked .locked-title,
     form.is-locked .check,
-    form.is-locked #reset {
+    form.is-locked #reset,
+    form.is-locked #layer-toggle,
+    form.is-locked #share {
       flex-shrink: 0;
     }
 
     form.is-locked .check { white-space: nowrap; }
 
     #reset { flex: 0 0 auto; }
+
+    #share, #layer-toggle {
+      align-self: end;
+      height: 36px;
+      padding: 6px 12px;
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+
+    #load-progress {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 0 auto 8px;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      flex: 0 0 auto;
+    }
+
+    #load-status {
+      margin: 0;
+      color: var(--paper);
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .load-row {
+      display: grid;
+      grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .load-row:has(.playbar[hidden]) { display: none; }
+
+    .load-count {
+      letter-spacing: 0;
+      text-transform: none;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
 
     .stage {
       width: min(1100px, calc(100% - 32px));
@@ -340,6 +405,13 @@
 
     canvas.interactive.dragging { cursor: grabbing; }
 
+    canvas.browsable {
+      cursor: grab;
+      touch-action: none;
+    }
+
+    canvas.browsable.dragging { cursor: grabbing; }
+
     .transport {
       display: flex;
       flex-wrap: nowrap;
@@ -357,12 +429,6 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
-    }
-
-    .bars {
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
     }
 
     .playbar {
@@ -458,7 +524,7 @@
     }
 
     @container (max-width: 720px) {
-      header, form, .transport, .stage {
+      header, form, #load-progress, .transport, .stage {
         width: calc(100% - 16px);
       }
 
@@ -506,6 +572,9 @@
       gap: 16px;
       margin-top: 16px;
     }
+
+    #share-hint { width: min(28rem, calc(100% - 32px)); }
+    #share-hint .dialog-actions { justify-content: flex-end; }
 
     dialog .linkish { color: #6d6256; }
     dialog .linkish:hover:not(:disabled) { color: var(--ink); background: transparent; }
@@ -556,11 +625,25 @@
     </div>
     <div id="locked-bar" hidden>
       <p class="locked-title"><span id="locked-label">Tijdreis</span></p>
-      <button id="reset" type="button">Verplaatsen</button>
+      <button id="reset" type="button">Nieuwe locatie / Zoom</button>
     </div>
-    <label class="check"><input id="linear" type="checkbox">Lineaire tijd</label>
-    <label class="check"><input id="satellite" type="checkbox">Satelliet</label>
+    <button id="layer-toggle" type="button">Sat/Kaart</button>
+    <button id="share" type="button">Delen</button>
   </form>
+
+  <div id="load-progress" hidden>
+    <p id="load-status">Bezig met ophalen…</p>
+    <div class="load-row">
+      <span>Kaart</span>
+      <div id="mapbar" class="playbar" role="img" aria-label="Voortgang kaart" hidden></div>
+      <span id="map-count" class="load-count"></span>
+    </div>
+    <div class="load-row">
+      <span>Foto's</span>
+      <div id="satbar" class="playbar" role="img" aria-label="Voortgang foto's" hidden></div>
+      <span id="sat-count" class="load-count"></span>
+    </div>
+  </div>
 
   <div class="stage" id="stage" role="application" aria-label="Kaart">
     <div class="stage-wrap">
@@ -575,10 +658,6 @@
 
   <div class="transport" id="transport" hidden>
     <div class="playline">
-      <div class="bars">
-        <div id="mapbar" class="playbar" role="img" aria-label="Voortgang kaart" hidden></div>
-        <div id="satbar" class="playbar" role="img" aria-label="Voortgang satelliet" hidden></div>
-      </div>
       <input id="scrub" type="range" min="0" max="0" value="0" hidden disabled aria-label="Jaar">
     </div>
     <div class="transport-controls" id="transport-controls" hidden>
@@ -589,6 +668,7 @@
         <option value="1500">langzaam</option>
       </select>
       <button id="download" type="button" disabled>WebM</button>
+      <button id="mp4" type="button" disabled title="MP4 voor Signal en WhatsApp.">MP4</button>
       <button id="zip" type="button" disabled title="Map met viewer en beelden. Uitpakken en index.html openen.">Zip</button>
     </div>
   </div>
@@ -599,16 +679,23 @@
   <dialog id="help">
     <h2>Zo gebruik je Tijdreis</h2>
     <p>Zoek een plaats om het nieuwste jaar, zoom 9 en het volledige jaarbereik in te stellen. Verplaatst de zoekopdracht de kaart, dan wordt een geladen film gereset.</p>
-    <p>Sleep de kaart en zoom met een knijpbeweging of met scrollen, kies daarna Laden. Dat vergrendelt het beeld. Verplaatsen maakt het weer vrij; de volgende pan of zoom wist opgeslagen tegels.</p>
-    <p>Na het laden: sleep de verticale scheidslijn op de kaart links/rechts. Links staat de gekozen laag (Satelliet of Kaart), rechts de andere. De tijdbalk eronder loopt door de jaren; beide lagen blijven zichtbaar volgens die scheiding. Ontbreekt een beeld, dan blijft het vorige staan, of je ziet een doorkruist pictogram als er niets eerder is.</p>
-    <p>Plaats, jaar en de laatste download worden in deze browser bewaard. Met lineaire tijd krijgt elk jaar de volledige duur. Zonder dat: een nieuw beeld de volle duur, een herhaling een kwart. Gelijk ogende bladen worden niet opnieuw opgehaald.</p>
-    <p>WebM neemt de film op. Zip bewaart de kant-en-klare beelden plus één bladzijde: uitpakken en index.html openen. Afspelen, de tijdbalk en de scheiding tussen kaart en satelliet werken dan zonder internet. De losse tegels zitten er niet in.</p>
+    <p>Sleep de kaart en zoom met een knijpbeweging of met scrollen, kies daarna Laden. Dat vergrendelt het beeld. Na het laden kun je alsnog slepen en zoomen. Staat het beeld even stil, dan haalt Tijdreis de tegels voor dat beeld en die zoom op en bewaart ze; de balken laten de voortgang zien. Nieuwe locatie / Zoom maakt de kaart weer vrij; de volgende pan of zoom wist opgeslagen tegels.</p>
+    <p>Na het laden: sleep de verticale scheidslijn op de kaart links/rechts. Links staat de kaart, rechts de satelliet. Sat/Kaart zet die lijn naar de andere kant van het beeld. De tijdbalk eronder loopt door de jaren. Ontbreekt een beeld, dan blijft het vorige staan, of je ziet een doorkruist pictogram als er niets eerder is. Ligt het beeld in de provincie Utrecht, dan staan aan de satellietkant ook de luchtfoto's van 1950, 1996, 2000, 2003 en 2025.</p>
+    <p>Plaats, jaar en de laatste download worden in deze browser bewaard. Delen kopieert een link met plek, zoom, jaarbereik en de stand van de scheiding. Een nieuw beeld krijgt de volle duur, een herhaling een kwart. Gelijk ogende bladen worden niet opnieuw opgehaald.</p>
+    <p>WebM neemt de film op. MP4 doet hetzelfde in een bestand dat Signal en WhatsApp kunnen afspelen. Zip bewaart de kant-en-klare beelden plus één bladzijde: uitpakken en index.html openen. Afspelen, de tijdbalk en de scheiding tussen kaart en satelliet werken dan zonder internet. De losse tegels zitten er niet in.</p>
     <div class="dialog-actions">
       <button id="forget" class="linkish" type="button">Vergeet opgeslagen tegels</button>
       <button id="help-close" class="primary" type="button">Sluiten</button>
     </div>
   </dialog>
 
-  <script src="app.js?v=35"></script>
+  <dialog id="share-hint">
+    <p>Klik op de laden knop om te starten. Druk op het vraagteken voor meer informatie.</p>
+    <div class="dialog-actions">
+      <button id="share-hint-close" class="primary" type="button">OK</button>
+    </div>
+  </dialog>
+
+  <script src="app.js?v=53"></script>
 </body>
 </html>
