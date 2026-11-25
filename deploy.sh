@@ -14,6 +14,7 @@ mkdir -p "$DEST"
 rsync -av --delete \
   --include 'index.html' \
   --include 'app.js' \
+  --include 'playback.js' \
   --include 'og.jpg' \
   --exclude '*' \
   "${ROOT}/" "${DEST}/"

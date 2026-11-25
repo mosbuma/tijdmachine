@@ -251,290 +251,13 @@ const HELP_TIPS = [
   { target: "#play", text: "Afspelen", side: "right", row: "bottom" },
 ];
 
-function unionRect(elements) {
-  const rects = elements.map((el) => el.getBoundingClientRect());
-  const left = Math.min(...rects.map((r) => r.left));
-  const top = Math.min(...rects.map((r) => r.top));
-  const right = Math.max(...rects.map((r) => r.right));
-  const bottom = Math.max(...rects.map((r) => r.bottom));
-  return { left, top, right, bottom, width: right - left, height: bottom - top };
-}
-
-function helpPiece(className, box) {
-  const el = document.createElement("div");
-  el.className = className;
-  for (const [key, value] of Object.entries(box)) el.style[key] = `${Math.round(value)}px`;
-  helpTips.append(el);
-  return el;
-}
-
-function boxesOverlap(a, b, gap = 8) {
-  return a.left < b.right + gap && a.right > b.left - gap && a.top < b.bottom + gap && a.bottom > b.top - gap;
-}
-
 function layoutHelpTips() {
-  helpTips.replaceChildren();
-  if (!helpDialog.open) return;
-  const cardEl = helpDialog.querySelector(".help-card");
-  const vw = helpDialog.clientWidth;
-  const formBottom = document.querySelector("form").getBoundingClientRect().bottom;
-  const tipGap = 22;
-  const gapTop = formBottom + tipGap;
-  cardEl.style.maxHeight = "";
-  cardEl.style.top = "";
-  cardEl.style.transform = "";
-  const cardRect = cardEl.getBoundingClientRect();
-  const card = { left: cardRect.left, top: cardRect.top, right: cardRect.right, bottom: cardRect.bottom };
-  const obstacles = [card];
-  const bands = [];
-  const items = [];
-  for (const tip of HELP_TIPS) {
-    const shown = [...document.querySelectorAll(tip.target)].filter((el) => {
-      const rect = el.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
-    });
-    const groups = tip.union ? (shown.length ? [shown] : []) : shown.map((el) => [el]);
-    for (const group of groups) items.push({ ...tip, rect: unionRect(group) });
-  }
-  const addStem = (x, y, w, h) => {
-    if (w < 1 || h < 1) return;
-    const stem = { left: x, top: y, right: x + w, bottom: y + h };
-    const hit = obstacles.find((other) => boxesOverlap(stem, other, 0));
-    if (!hit) {
-      helpPiece("help-stem", { left: x, top: y, width: w, height: h });
-      return;
-    }
-    if (h <= 4) {
-      if (stem.left < hit.left) addStem(stem.left, y, Math.min(stem.right, hit.left) - stem.left, h);
-      if (stem.right > hit.right) addStem(Math.max(stem.left, hit.right), y, stem.right - Math.max(stem.left, hit.right), h);
-    } else {
-      if (stem.top < hit.top) addStem(x, stem.top, w, Math.min(stem.bottom, hit.top) - stem.top);
-      if (stem.bottom > hit.bottom) addStem(x, Math.max(stem.top, hit.bottom), w, stem.bottom - Math.max(stem.top, hit.bottom));
-    }
-  };
-  const connect = (entry, box) => {
-    const rect = entry.item.rect;
-    const targetX = rect.left + rect.width / 2;
-    const targetY = rect.top + rect.height / 2;
-    const labelX = (box.left + box.right) / 2;
-    const labelY = (box.top + box.bottom) / 2;
-    const beside = Math.abs(targetX - labelX) > Math.abs(targetY - labelY)
-      && box.bottom > rect.top && box.top < rect.bottom;
-    if (beside) {
-      const y = Math.min(box.bottom - 2, Math.max(box.top + 2, targetY));
-      const from = targetX > labelX ? box.right : box.left;
-      const to = targetX > labelX ? rect.left : rect.right;
-      addStem(Math.min(from, to), y - 1, Math.abs(to - from), 2);
-      return;
-    }
-    const yLabel = targetY >= labelY ? box.bottom : box.top;
-    const yTarget = targetY >= labelY ? rect.top - 3 : rect.bottom + 3;
-    if (Math.abs(labelX - targetX) < 18) {
-      addStem(targetX - 1, Math.min(yLabel, yTarget), 2, Math.abs(yTarget - yLabel));
-      return;
-    }
-    addStem(Math.min(labelX, targetX), yLabel - 1, Math.abs(targetX - labelX), 2);
-    addStem(targetX - 1, Math.min(yLabel, yTarget), 2, Math.abs(yTarget - yLabel));
-  };
-  const alignRow = (row, rowTop) => {
-    const boxes = row.map((entry) => {
-      const cx = entry.item.rect.left + entry.item.rect.width / 2;
-      const ideal = Math.min(vw - entry.w - 8, Math.max(8, cx - entry.w / 2));
-      return { ...entry, cx, ideal, left: ideal };
-    }).sort((a, b) => a.cx - b.cx);
-    for (let i = 1; i < boxes.length; i += 1) {
-      const minLeft = boxes[i - 1].left + boxes[i - 1].w + 8;
-      if (boxes[i].left < minLeft) boxes[i].left = minLeft;
-    }
-    const overflow = boxes.length ? boxes.at(-1).left + boxes.at(-1).w - (vw - 8) : 0;
-    if (overflow > 0) for (const box of boxes) box.left -= overflow;
-    for (const pin of boxes.filter((box) => box.item.pin)) {
-      pin.left = pin.ideal;
-      const index = boxes.indexOf(pin);
-      for (let i = index - 1; i >= 0; i -= 1) {
-        const maxLeft = boxes[i + 1].left - 8 - boxes[i].w;
-        if (boxes[i].item.pin || boxes[i].left <= maxLeft) continue;
-        boxes[i].left = maxLeft;
-      }
-      for (let i = index + 1; i < boxes.length; i += 1) {
-        const minLeft = boxes[i - 1].left + boxes[i - 1].w + 8;
-        if (boxes[i].item.pin) break;
-        if (boxes[i].left < minLeft) boxes[i].left = minLeft;
-      }
-    }
-    for (const box of boxes) box.dy = 0;
-    const stemOf = (box) => {
-      const labelX = box.left + box.w / 2;
-      const targetX = box.item.rect.left + box.item.rect.width / 2;
-      const labelY = rowTop + box.h / 2;
-      const targetY = box.item.rect.top + box.item.rect.height / 2;
-      return {
-        x1: Math.min(labelX, targetX),
-        x2: Math.max(labelX, targetX),
-        targetX,
-        yEdge: targetY >= labelY ? rowTop + box.h : rowTop,
-        down: targetY < labelY,
-      };
-    };
-    const coversStem = (box, stem) => {
-      if (stem.yEdge < rowTop - 1 || stem.yEdge > rowTop + box.h + 1) return false;
-      const right = box.left + box.w;
-      const onDrop = box.left < stem.targetX && right > stem.targetX;
-      const onRun = box.left < stem.x2 - 8 && right > stem.x1 + 8;
-      return onDrop || onRun;
-    };
-    const covered = [];
-    for (const owner of boxes) {
-      if (owner.item.wide) continue;
-      const stem = stemOf(owner);
-      for (const other of boxes) {
-        if (other === owner || other.item.pin || other.item.wide) continue;
-        if (coversStem(other, stem)) covered.push({ other, owner, down: stem.down });
-      }
-    }
-    for (const { other, owner, down } of covered) {
-      const mutual = covered.some((pair) => pair.other === owner && pair.owner === other);
-      if (mutual && other.w > owner.w) continue;
-      other.dy = down ? 14 : -14;
-    }
-    for (const box of boxes) {
-      const top = rowTop + box.dy;
-      const placed = { left: box.left, top, right: box.left + box.w, bottom: top + box.h };
-      if (box.left < 4 || placed.right > vw - 4 || boxesOverlap(placed, card, 4)) {
-        box.label.remove();
-        continue;
-      }
-      box.label.style.left = `${Math.round(box.left)}px`;
-      box.label.style.top = `${Math.round(top)}px`;
-      obstacles.push(placed);
-      connect(box, placed);
-    }
-  };
-  const packAgainst = (entries, edge, grow, limit) => {
-    let index = 0;
-    let cursor = edge;
-    const fits = (rowTop, rowH) => (grow < 0 ? rowTop >= limit - 2 : rowTop + rowH <= limit + 2);
-    while (index < entries.length) {
-      if (entries[index].item.wide) {
-        const entry = entries[index];
-        index += 1;
-        const rowTop = grow < 0 ? cursor - entry.h : cursor;
-        if (!fits(rowTop, entry.h)) {
-          entry.label.remove();
-          continue;
-        }
-        alignRow([entry], rowTop);
-        cursor = grow < 0 ? rowTop - 4 : rowTop + entry.h + 4;
-        continue;
-      }
-      const row = [];
-      let used = 8;
-      let rowH = 0;
-      while (index < entries.length && !entries[index].item.wide) {
-        const entry = entries[index];
-        if (row.length && used + entry.w > vw - 8) break;
-        row.push(entry);
-        rowH = Math.max(rowH, entry.h);
-        used += entry.w + 8;
-        index += 1;
-      }
-      const rowTop = grow < 0 ? cursor - rowH : cursor;
-      if (!fits(rowTop, rowH)) {
-        for (const entry of row) entry.label.remove();
-        for (let rest = index; rest < entries.length; rest += 1) entries[rest].label.remove();
-        return;
-      }
-      alignRow(row, rowTop);
-      cursor = grow < 0 ? rowTop - 4 : rowTop + rowH + 4;
-    }
-  };
-  const measured = items.map((item) => {
-    helpPiece("help-ring", {
-      left: item.rect.left - 4,
-      top: item.rect.top - 4,
-      width: item.rect.width + 8,
-      height: item.rect.height + 8,
-    });
-    const label = document.createElement("div");
-    label.className = item.wide ? "help-tip wide" : "help-tip";
-    label.textContent = item.text;
-    if (item.wide) label.style.maxWidth = `${Math.round(Math.min(item.rect.width, vw - 24))}px`;
-    helpTips.append(label);
-    return { item, label, w: label.offsetWidth, h: label.offsetHeight };
+  Playback.layoutHelp({
+    dialog: helpDialog,
+    tipsRoot: helpTips,
+    tips: HELP_TIPS,
+    anchor: document.querySelector("form"),
   });
-  const upper = measured
-    .filter((entry) => entry.item.side !== "left" && entry.item.side !== "right" && entry.item.rect.top < card.top)
-    .sort((a, b) => (a.item.wide ? 1 : 0) - (b.item.wide ? 1 : 0) || a.item.rect.left - b.item.rect.left);
-  const lower = measured
-    .filter((entry) => !upper.includes(entry))
-    .sort((a, b) => (a.item.wide ? 1 : 0) - (b.item.wide ? 1 : 0) || a.item.rect.left - b.item.rect.left);
-  packAgainst(upper, gapTop, 1, card.top - 8);
-  const bottomRow = lower.filter((entry) => entry.item.row === "bottom");
-  const beside = lower.filter((entry) => entry.item.row !== "bottom");
-  if (bottomRow.length) {
-    const rowH = Math.max(...bottomRow.map((entry) => entry.h));
-    const anchor = Math.min(...bottomRow.map((entry) => entry.item.rect.top));
-    let rowTop = anchor - tipGap - rowH;
-    if (rowTop < card.bottom + 8) rowTop = card.bottom + 8;
-    alignRow(bottomRow, rowTop);
-    bands.push({ left: 0, top: rowTop, right: vw, bottom: rowTop + rowH });
-  }
-  placeBesideControls(beside);
-
-  function placeBesideControls(entries) {
-  const vw = helpDialog.clientWidth;
-  const controls = ["#splitbar", "#yearbars", "#play"].flatMap((sel) => {
-    const el = document.querySelector(sel);
-    if (!el || el.hidden) return [];
-    const rect = el.getBoundingClientRect();
-    if (rect.width < 1 || rect.height < 1) return [];
-    return [{ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }];
-  });
-  const taken = [];
-  const blocked = (box) => [...obstacles, ...bands, ...controls, ...taken].some((other) => boxesOverlap(box, other, 4));
-  const preferred = (entry) => {
-    const rect = entry.item.rect;
-    const gap = 8;
-    let left = rect.left + rect.width / 2 - entry.w / 2;
-    let top = rect.top - gap - entry.h;
-    const roomLeft = rect.left - gap - entry.w >= 8;
-    const roomRight = rect.right + gap + entry.w <= vw - 8;
-    if ((entry.item.side === "left" && roomLeft) || (entry.item.side === "right" && !roomRight && roomLeft)) {
-      left = rect.left - gap - entry.w;
-      top = rect.top + rect.height / 2 - entry.h / 2;
-    } else if (entry.item.side === "right" && roomRight) {
-      left = rect.right + gap;
-      top = rect.top + rect.height / 2 - entry.h / 2;
-    }
-    left = Math.min(vw - entry.w - 8, Math.max(8, left));
-    return { left, top, right: left + entry.w, bottom: top + entry.h };
-  };
-  const liftClear = (box) => {
-    for (let guard = 0; guard < 12; guard += 1) {
-      const hits = [...obstacles, ...bands, ...controls, ...taken].filter((other) => boxesOverlap(box, other, 4));
-      if (!hits.length) return box;
-      const nextTop = Math.min(...hits.map((hit) => hit.top)) - 6 - (box.bottom - box.top);
-      if (nextTop < 4) return null;
-      box = { left: box.left, top: nextTop, right: box.right, bottom: nextTop + (box.bottom - box.top) };
-    }
-    return null;
-  };
-  const commit = (entry, box) => {
-    if (!box || box.left < 4 || box.right > vw - 4 || blocked(box)) {
-      entry.label.remove();
-      return;
-    }
-    entry.label.style.left = `${Math.round(box.left)}px`;
-    entry.label.style.top = `${Math.round(box.top)}px`;
-    taken.push(box);
-    obstacles.push(box);
-    connect(entry, box);
-  };
-  const shorts = entries.filter((entry) => !entry.item.wide)
-    .sort((a, b) => a.w - b.w || a.item.rect.left - b.item.rect.left);
-  for (const entry of shorts) commit(entry, liftClear(preferred(entry)));
-  for (const entry of entries.filter((item) => item.item.wide)) commit(entry, liftClear(preferred(entry)));
-  }
 }
 
 function openHelp(record) {
@@ -622,8 +345,10 @@ async function renderCacheStats() {
   }
 }
 
+Playback.bindTabs(settingsDialog);
 settingsOpen.addEventListener("click", () => {
   if (!settingsDialog.open) settingsDialog.showModal();
+  fillColophon();
   renderCacheStats();
 });
 settingsClose.addEventListener("click", () => settingsDialog.close());
@@ -1026,9 +751,61 @@ function editionsHere(editions, place) {
   return editions.filter((edition) => editionCovers(edition, place));
 }
 
+function plainCredit(text) {
+  return String(text || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function mapCredit(edition) {
+  return edition?.copyright || "Esri Nederland; Kadaster";
+}
+
+function mapCopyright(edition) {
+  if (!edition) return Promise.resolve(mapCredit(edition));
+  if (edition.copyright) return Promise.resolve(edition.copyright);
+  if (!edition.copyrightTask) {
+    edition.copyrightTask = fetch(serviceUrl(edition, "?f=pjson"))
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        edition.copyright = plainCredit(body?.copyrightText) || "Esri Nederland; Kadaster";
+        return edition.copyright;
+      })
+      .catch(() => {
+        edition.copyright = "Esri Nederland; Kadaster";
+        return edition.copyright;
+      });
+  }
+  return edition.copyrightTask;
+}
+
+function loadMapCopyrights(editions) {
+  Promise.all(editions.map((edition) => mapCopyright(edition))).then(() => {
+    fillColophon();
+    if (!playing && !recording && !packing) requestRepaint();
+  });
+}
+
+function fillColophon() {
+  const write = (id, editions) => {
+    const list = document.querySelector(id);
+    if (!list || !editions?.length) return;
+    const lines = Playback.colophonLines(editions.map((edition) => ({
+      year: edition.start,
+      text: edition.copyright || edition.credit || "",
+    })));
+    list.replaceChildren(...lines.map((text) => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      return item;
+    }));
+  };
+  write("#colofon-maps", mapEditions);
+  write("#colofon-photos", satAll);
+}
+
 function satelliteCredit(edition) {
-  if (!edition?.credit) return "Beeldmateriaal.nl / Kadaster";
-  return edition.credit;
+  if (edition?.copyright) return edition.copyright;
+  if (edition?.credit) return edition.credit;
+  return "Beeldmateriaal.nl";
 }
 
 function imageType(buffer) {
@@ -1074,6 +851,7 @@ async function discoverMaps(signal) {
       end: year,
       label: String(year),
       maxLevel: body.tileInfo.lods.at(-1).level,
+      copyright: plainCredit(body.copyrightText),
     });
   });
 
@@ -1103,6 +881,7 @@ async function discoverSatellite(signal) {
       label: String(candidate.year),
       maxLevel: body.tileInfo.lods.at(-1).level,
       base: candidate.base,
+      copyright: plainCredit(body.copyrightText),
       credit: candidate.credit,
       extent: box ? { xmin: box.xmin, ymin: box.ymin, xmax: box.xmax, ymax: box.ymax } : null,
     });
@@ -1131,6 +910,7 @@ async function loadTileInfo(edition, signal) {
   const data = await response.json();
   const info = data.tileInfo;
   if (!info) throw new Error("Deze kaartlaag heeft geen tegels.");
+  if (!edition.copyright) edition.copyright = plainCredit(data.copyrightText);
   const lods = info.lods.map((lod) => ({ level: lod.level, resolution: lod.resolution }));
   const finest = lods[lods.length - 1];
   return {
@@ -1207,115 +987,16 @@ function blitTile(context, bitmap, tile, bounds, info) {
   );
 }
 
-const NOTE_ICON = 24;
-const NOTE_ICON_GAP = 7;
-const NOTE_PART_GAP = 20;
-
-function drawNoteIcon(context, kind, x, y) {
-  const s = NOTE_ICON;
-  context.save();
-  context.translate(x, y - s / 2);
-  context.lineWidth = 2.2;
-  context.lineJoin = "round";
-  context.strokeStyle = context.fillStyle;
-  context.beginPath();
-  if (kind === "map") {
-    context.moveTo(1, 4);
-    context.lineTo(8, 1);
-    context.lineTo(16, 4);
-    context.lineTo(23, 1);
-    context.lineTo(23, 20);
-    context.lineTo(16, 23);
-    context.lineTo(8, 20);
-    context.lineTo(1, 23);
-    context.closePath();
-    context.moveTo(8, 1);
-    context.lineTo(8, 20);
-    context.moveTo(16, 4);
-    context.lineTo(16, 23);
-    context.stroke();
-  } else {
-    context.moveTo(2, 7);
-    context.lineTo(7, 7);
-    context.lineTo(9, 3);
-    context.lineTo(15, 3);
-    context.lineTo(17, 7);
-    context.lineTo(22, 7);
-    context.lineTo(22, 21);
-    context.lineTo(2, 21);
-    context.closePath();
-    context.stroke();
-    context.beginPath();
-    context.arc(12, 14, 4.5, 0, Math.PI * 2);
-    context.stroke();
-  }
-  context.restore();
-}
-
-function noteParts(notes) {
-  return [["map", notes?.map], ["sat", notes?.sat]]
-    .filter(([, year]) => year != null && Number.isFinite(Number(year)))
-    .map(([kind, year]) => ({ kind, text: String(year) }));
-}
-
-function stamp(label, context = offCtx, line, notes, {
-  box = "left", credit = "right", yearBox = true, creditLine = true,
-} = {}) {
-  context.save();
-  if (yearBox) {
-    context.save();
-    const scale = 0.75;
-    if (box === "right") {
-      context.translate(WIDTH, 0);
-      context.scale(scale, scale);
-      context.translate(-WIDTH, 0);
-    } else {
-      context.scale(scale, scale);
-    }
-    const parts = noteParts(notes);
-    const padX = 18;
-    context.font = "600 52px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-    const yearW = context.measureText(String(label)).width;
-    context.font = "600 26px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-    for (const part of parts) part.width = context.measureText(part.text).width;
-    const noteW = parts.reduce((sum, part) => sum + NOTE_ICON + NOTE_ICON_GAP + part.width, 0)
-      + NOTE_PART_GAP * Math.max(0, parts.length - 1);
-    const textW = Math.max(yearW, noteW);
-    const boxH = parts.length ? 112 : 72;
-    const boxW = textW + padX * 2;
-    const boxX = box === "right" ? WIDTH - 28 - boxW : 28;
-    context.fillStyle = "rgba(243, 236, 223, 0.94)";
-    context.fillRect(boxX, 28, boxW, boxH);
-    context.fillStyle = "#1c1916";
-    context.textBaseline = "middle";
-    context.font = "600 52px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-    const middle = boxX + padX + textW / 2;
-    context.fillText(String(label), middle - yearW / 2, 28 + 36);
-    if (parts.length) {
-      context.font = "600 26px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-      context.fillStyle = "rgba(28, 25, 22, 0.78)";
-      let x = middle - noteW / 2;
-      const y = 28 + 84;
-      for (const part of parts) {
-        drawNoteIcon(context, part.kind, x, y);
-        x += NOTE_ICON + NOTE_ICON_GAP;
-        context.fillText(part.text, x, y + 1);
-        x += part.width + NOTE_PART_GAP;
-      }
-    }
-    context.restore();
-  }
-  if (creditLine) {
-    context.font = "16px 'Segoe UI', 'Helvetica Neue', sans-serif";
-    context.fillStyle = "rgba(243, 236, 223, 0.95)";
-    context.textAlign = credit;
-    context.textBaseline = "alphabetic";
-    context.shadowColor = "rgba(28, 25, 22, 0.55)";
-    context.shadowBlur = 6;
-    const text = line || (frameSource === "satellite" ? "Beeldmateriaal.nl / Kadaster" : "Kadaster / Topotijdreis");
-    context.fillText(text, credit === "right" ? WIDTH - 28 : 28, HEIGHT - 26);
-  }
-  context.restore();
+function stamp(label, context = offCtx, line, notes, options = {}) {
+  Playback.stamp(context, {
+    label,
+    line,
+    notes,
+    width: WIDTH,
+    height: HEIGHT,
+    fallback: frameSource === "satellite" ? satelliteCredit(null) : mapCredit(null),
+    ...options,
+  });
 }
 
 function sheetForYear(editions, year) {
@@ -1382,79 +1063,22 @@ let shownFrame = 0;
 let hasPresented = false;
 
 function drawMissing(context, kind) {
-  context.save();
-  context.fillStyle = "#0c0c0c";
-  context.fillRect(0, 0, WIDTH, HEIGHT);
-  context.fillStyle = "#f3ecdf";
-  context.font = "600 42px 'Segoe UI', 'Helvetica Neue', sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(
-    kind === "map" ? "Geen kaart beschikbaar" : "Geen beeldmateriaal beschikbaar",
-    WIDTH / 2,
-    HEIGHT / 2,
-  );
-  context.restore();
+  Playback.drawMissing(context, kind, WIDTH, HEIGHT);
 }
 
 function smoothStep(amount) {
-  return amount * amount * (3 - 2 * amount);
+  return Playback.smooth(amount);
 }
 
 function drawWipeBetween(axis, sign, t) {
-  const amount = Math.min(1, Math.max(0, t));
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = 1;
-  ctx.drawImage(fromCanvas, 0, 0);
-  ctx.save();
-  if (axis === "x") {
-    if (sign > 0) {
-      const edge = amount * WIDTH;
-      ctx.beginPath();
-      ctx.rect(0, 0, edge, HEIGHT);
-      ctx.clip();
-    } else {
-      const edge = (1 - amount) * WIDTH;
-      ctx.beginPath();
-      ctx.rect(edge, 0, WIDTH - edge, HEIGHT);
-      ctx.clip();
-    }
-  } else if (sign > 0) {
-    const edge = (1 - amount) * HEIGHT;
-    ctx.beginPath();
-    ctx.rect(0, edge, WIDTH, HEIGHT - edge);
-    ctx.clip();
-  } else {
-    const edge = amount * HEIGHT;
-    ctx.beginPath();
-    ctx.rect(0, 0, WIDTH, edge);
-    ctx.clip();
-  }
-  ctx.drawImage(toCanvas, 0, 0);
-  ctx.restore();
+  Playback.wipe(ctx, fromCanvas, toCanvas, axis, sign, t, WIDTH, HEIGHT);
 }
 
 function drawLayerSplitTo(context, split, activeSat = false) {
-  const t = Math.min(1, Math.max(0, split));
   const active = activeSat ? satBlendCanvas : mapBlendCanvas;
   const other = activeSat ? mapBlendCanvas : satBlendCanvas;
-  context.setTransform(1, 0, 0, 1, 0, 0);
-  context.globalAlpha = 1;
-  context.drawImage(other, 0, 0);
-  if (t > 0) {
-    context.save();
-    if (blendMode === "fade") {
-      context.globalAlpha = t;
-    } else {
-      const edge = (1 - t) * WIDTH;
-      context.beginPath();
-      context.rect(edge, 0, WIDTH - edge, HEIGHT);
-      context.clip();
-    }
-    context.drawImage(active, 0, 0);
-    context.restore();
-  }
-  overlayYearBoxes(context, t);
+  Playback.composite(context, other, active, split, blendMode, WIDTH, HEIGHT);
+  overlayYearBoxes(context, split);
 }
 
 function drawLayerSplit(split, activeSat) {
@@ -1623,13 +1247,7 @@ function sameLook(a, b) {
 }
 
 function nextChange(from, delta) {
-  let index = from + delta;
-  while (index >= 0 && index < frames.length && sameLook(index, from)) index += delta;
-  if (index < 0 || index >= frames.length) return from;
-  if (delta < 0) {
-    while (index > 0 && sameLook(index - 1, index)) index -= 1;
-  }
-  return index;
+  return Playback.nextIndex(frames.length, sameLook, from, delta);
 }
 
 function stepFrame(delta, single = false) {
@@ -1667,20 +1285,15 @@ function startPlayback() {
 }
 
 function compareTiming() {
-  const holdMs = (Number(holdInput.value) || 800) * 2.5;
-  return { holdMs, fadeMs: Math.min(3500, holdMs) };
+  return Playback.compareTiming(holdInput.value);
 }
 
 function compareLength({ holdMs, fadeMs }) {
   return 3 * holdMs + 2 * fadeMs;
 }
 
-function compareMix(t, { holdMs, fadeMs }) {
-  const p = t % (2 * (holdMs + fadeMs));
-  if (p < holdMs) return 0;
-  if (p < holdMs + fadeMs) return smoothStep((p - holdMs) / fadeMs);
-  if (p < 2 * holdMs + fadeMs) return 1;
-  return 1 - smoothStep((p - 2 * holdMs - fadeMs) / fadeMs);
+function compareMix(t, timing) {
+  return Playback.compareMix(t, timing);
 }
 
 function drawPaneMix(mix) {
@@ -2268,517 +1881,20 @@ function zipStore(files) {
   return new Blob([...parts, ...central, end], { type: "application/zip" });
 }
 
-function viewerPage(movie) {
+function viewerPage(movie, playback) {
   const data = JSON.stringify(movie).replace(/</g, "\\u003c");
-  const utrecht = (movie.credits || []).flat().some((credit) => credit === "Provincie Utrecht");
-  const sourceLine = utrecht
-    ? "Kaart: Kadaster, Topotijdreis. Satelliet: Beeldmateriaal.nl, Kadaster. Luchtfoto's van 1950, 1996, 2000, 2003 en 2025 in de provincie Utrecht: Provincie Utrecht."
-    : "Kaart: Kadaster, Topotijdreis. Satelliet: Beeldmateriaal.nl, Kadaster.";
+  const script = playback.replace(/<\/script/gi, "<\\/script");
   return `<!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tijdmachine</title>
-  <style>
-    :root { color-scheme: dark; --ink: #1c1916; --paper: #f3ecdf; --muted: #b5a894; --red: #c4492c; }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: var(--ink); color: var(--paper); font: 16px/1.4 "Segoe UI", "Helvetica Neue", sans-serif; }
-    header, .transport, .note { width: min(1100px, calc(100% - 32px)); margin: 0 auto; }
-    header { padding: 28px 0 12px; }
-    .eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; }
-    h1 { margin: 0; font-family: Palatino, "Palatino Linotype", "Times New Roman", serif; font-size: 40px; font-weight: 500; letter-spacing: -0.03em; }
-    .stage-wrap { position: relative; width: min(1100px, calc(100% - 32px)); margin: 12px auto; }
-    canvas { display: block; width: 100%; height: auto; background: #e7dcc4; touch-action: none; }
-    .wipe-bars { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
-    .layer-bar { position: absolute; pointer-events: auto; touch-action: none; width: 28px; cursor: ew-resize; background: transparent; }
-    .layer-bar::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: rgba(243, 236, 223, 0.85); box-shadow: 0 0 6px rgba(0, 0, 0, 0.35); pointer-events: none; }
-    .layer-thumb { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; gap: 2px; min-width: 34px; height: 34px; padding: 0 6px; border-radius: 6px; font-size: 14px; font-weight: 600; line-height: 1; letter-spacing: -0.08em; color: var(--ink); background: rgba(243, 236, 223, 0.96); border: 1px solid #c9bfb1; box-shadow: 0 1px 6px rgba(28, 25, 22, 0.4); pointer-events: none; }
-    figcaption, .note { color: var(--muted); font-size: 13px; }
-    .transport { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 8px 0 28px; }
-    .playline { flex: 1 1 220px; }
-    #scrub { width: 100%; accent-color: var(--red); }
-    button, select { font: 15px/1.2 "Segoe UI", sans-serif; color: var(--ink); background: #d9d0c2; border: 0; border-radius: 2px; padding: 10px 12px; }
-    button { cursor: pointer; }
-    label { color: var(--muted); font-size: 13px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tijdmachine</title>
 </head>
 <body>
-  <header>
-    <p class="eyebrow">Kadaster · Topotijdreis</p>
-    <h1 id="place">Tijdmachine</h1>
-  </header>
-  <div class="stage-wrap" id="stage">
-    <canvas id="map" width="1280" height="720"></canvas>
-    <div class="wipe-bars" id="bars">
-      <div class="layer-bar" id="splitbar" role="slider" aria-label="Kaart en satelliet" aria-valuemin="0" aria-valuemax="1"><div class="layer-thumb"><span>←</span><span>→</span></div></div>
-    </div>
-  </div>
-  <p class="note" style="margin-top:8px">${sourceLine}</p>
-  <div class="transport">
-    <button id="play" type="button">Afspelen</button>
-    <label>Tempo
-      <select id="hold" aria-label="Tempo">
-        <option value="400">snel</option>
-        <option value="800">normaal</option>
-        <option value="1500">langzaam</option>
-      </select>
-    </label>
-    <div class="playline" id="playline"><input id="scrub" type="range" min="0" value="0" aria-label="Jaar"></div>
-  </div>
-  <p class="note">Deze bladzijde leest alleen de beelden naast zich. Uitgepakt openen in de browser; internet is niet nodig.</p>
-  <script type="application/json" id="movie">${data}</script>
-  <script>
-    const MOVIE = JSON.parse(document.getElementById("movie").textContent);
-    const W = 1280;
-    const H = 720;
-    const stage = document.getElementById("stage");
-    const screen = document.getElementById("map");
-    const ctx = screen.getContext("2d");
-    const fromCanvas = document.createElement("canvas");
-    const toCanvas = document.createElement("canvas");
-    const mapBlend = document.createElement("canvas");
-    const satBlend = document.createElement("canvas");
-    [fromCanvas, toCanvas, mapBlend, satBlend].forEach((canvas) => {
-      canvas.width = W;
-      canvas.height = H;
-    });
-    const fromCtx = fromCanvas.getContext("2d");
-    const playBtn = document.getElementById("play");
-    const scrub = document.getElementById("scrub");
-    const hold = document.getElementById("hold");
-    const splitbar = document.getElementById("splitbar");
-    const kinds = MOVIE.kinds || ["map", "sat"];
-    if (MOVIE.compare) document.getElementById("playline").hidden = true;
-    const last = Math.max(0, MOVIE.years.length - 1);
-    let index = Math.min(last, Math.max(0, MOVIE.index || 0));
-    let split = MOVIE.split == null ? (MOVIE.satellite ? 0 : 1) : Math.min(1, Math.max(0, MOVIE.split));
-    let playToken = 0;
-    let playing = false;
-    let hasPresented = false;
-    let showId = 0;
-    let builtYear = -1;
-    let layerDrag = null;
-    const images = {};
-
-    document.getElementById("place").textContent = MOVIE.place || "Tijdmachine";
-    document.title = MOVIE.place ? "Tijdmachine · " + MOVIE.place : "Tijdmachine";
-    if ([...hold.options].some((option) => option.value === String(MOVIE.hold))) hold.value = String(MOVIE.hold);
-    scrub.max = String(last);
-    function loadImages() {
-      const ids = [];
-      MOVIE.a.concat(MOVIE.b).forEach((id) => {
-        if (id != null && ids.indexOf(id) < 0) ids.push(id);
-      });
-      return Promise.all(ids.map((id) => new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => { images[id] = img; resolve(); };
-        img.onerror = () => resolve();
-        img.src = "i/" + id + ".jpg";
-      })));
-    }
-
-    function drawMissing(context, kind) {
-      context.save();
-      context.fillStyle = "#0c0c0c";
-      context.fillRect(0, 0, W, H);
-      context.fillStyle = "#f3ecdf";
-      context.font = "600 42px 'Segoe UI', 'Helvetica Neue', sans-serif";
-      context.textAlign = "center";
-      context.textBaseline = "middle";
-      context.fillText(
-        kind === "map" ? "Geen kaart beschikbaar" : "Geen beeldmateriaal beschikbaar",
-        W / 2,
-        H / 2,
-      );
-      context.restore();
-    }
-
-    function drawNoteIcon(context, kind, x, y) {
-      context.save();
-      context.translate(x, y - 12);
-      context.lineWidth = 2.2;
-      context.lineJoin = "round";
-      context.strokeStyle = context.fillStyle;
-      context.beginPath();
-      if (kind === "map") {
-        context.moveTo(1, 4);
-        context.lineTo(8, 1);
-        context.lineTo(16, 4);
-        context.lineTo(23, 1);
-        context.lineTo(23, 20);
-        context.lineTo(16, 23);
-        context.lineTo(8, 20);
-        context.lineTo(1, 23);
-        context.closePath();
-        context.moveTo(8, 1);
-        context.lineTo(8, 20);
-        context.moveTo(16, 4);
-        context.lineTo(16, 23);
-        context.stroke();
-      } else {
-        context.moveTo(2, 7);
-        context.lineTo(7, 7);
-        context.lineTo(9, 3);
-        context.lineTo(15, 3);
-        context.lineTo(17, 7);
-        context.lineTo(22, 7);
-        context.lineTo(22, 21);
-        context.lineTo(2, 21);
-        context.closePath();
-        context.stroke();
-        context.beginPath();
-        context.arc(12, 14, 4.5, 0, Math.PI * 2);
-        context.stroke();
-      }
-      context.restore();
-    }
-
-    function stamp(context, label, kind, credit, notes) {
-      context.save();
-      const parts = [["map", notes && notes.map], ["sat", notes && notes.sat]]
-        .filter((part) => part[1] != null && Number.isFinite(Number(part[1])))
-        .map((part) => ({ kind: part[0], text: String(part[1]) }));
-      const padX = 18;
-      context.font = "600 52px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-      const yearW = context.measureText(String(label)).width;
-      context.font = "600 26px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-      let noteW = 0;
-      parts.forEach((part, i) => {
-        part.width = context.measureText(part.text).width;
-        noteW += 31 + part.width + (i ? 20 : 0);
-      });
-      const textW = Math.max(yearW, noteW);
-      const boxH = parts.length ? 112 : 72;
-      context.fillStyle = "rgba(243, 236, 223, 0.94)";
-      context.fillRect(28, 28, textW + padX * 2, boxH);
-      context.fillStyle = "#1c1916";
-      context.textBaseline = "middle";
-      context.font = "600 52px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-      const middle = 28 + padX + textW / 2;
-      context.fillText(String(label), middle - yearW / 2, 28 + 36);
-      if (parts.length) {
-        context.font = "600 26px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-        context.fillStyle = "rgba(28, 25, 22, 0.78)";
-        let x = middle - noteW / 2;
-        for (const part of parts) {
-          drawNoteIcon(context, part.kind, x, 28 + 84);
-          x += 31;
-          context.fillText(part.text, x, 28 + 85);
-          x += part.width + 20;
-        }
-      }
-      context.font = "16px 'Segoe UI', 'Helvetica Neue', sans-serif";
-      context.fillStyle = "rgba(243, 236, 223, 0.95)";
-      context.textAlign = "right";
-      context.shadowColor = "rgba(28, 25, 22, 0.55)";
-      context.shadowBlur = 6;
-      const line = kind === "map" ? "Kadaster / Topotijdreis" : (credit || "Beeldmateriaal.nl / Kadaster");
-      context.fillText(line, W - 28, H - 26);
-      context.restore();
-    }
-
-    function composeLayer(canvas, id, label, kind, credit, note) {
-      const context = canvas.getContext("2d");
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.globalAlpha = 1;
-      const img = id == null ? null : images[id];
-      if (img) {
-        context.fillStyle = "#e7dcc4";
-        context.fillRect(0, 0, W, H);
-        context.drawImage(img, 0, 0, W, H);
-      } else drawMissing(context, kind === "map" ? "map" : "picture");
-      if (!MOVIE.compare) stamp(context, label, kind, credit, note);
-    }
-
-    function buildLayers(i) {
-      if (builtYear === i) return;
-      const label = MOVIE.years[i] || "";
-      const notes = {
-        map: MOVIE.mapYears ? MOVIE.mapYears[i] : null,
-        sat: MOVIE.satYears ? MOVIE.satYears[i] : null,
-      };
-      const credits = (MOVIE.credits && MOVIE.credits[i]) || [];
-      composeLayer(mapBlend, MOVIE.a[i], label, kinds[0], credits[0], notes);
-      composeLayer(satBlend, MOVIE.b[i], label, kinds[1], credits[1], notes);
-      builtYear = i;
-    }
-
-    function drawSplit(context, splitValue) {
-      const t = Math.min(1, Math.max(0, splitValue));
-      const edge = (1 - t) * W;
-      const active = mapBlend;
-      const other = satBlend;
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.globalAlpha = 1;
-      context.drawImage(other, 0, 0);
-      if (edge < W) {
-        context.save();
-        context.beginPath();
-        context.rect(edge, 0, W - edge, H);
-        context.clip();
-        context.drawImage(active, 0, 0);
-        context.restore();
-      }
-    }
-
-    function renderSplit(canvas, i) {
-      buildLayers(i);
-      drawSplit(canvas.getContext("2d"), split);
-    }
-
-    function smooth(amount) {
-      return amount * amount * (3 - 2 * amount);
-    }
-
-    function drawWipe(sign, t) {
-      const amount = Math.min(1, Math.max(0, t));
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.globalAlpha = 1;
-      ctx.drawImage(fromCanvas, 0, 0);
-      ctx.save();
-      ctx.beginPath();
-      if (sign > 0) ctx.rect(0, 0, amount * W, H);
-      else ctx.rect((1 - amount) * W, 0, amount * W, H);
-      ctx.clip();
-      ctx.drawImage(toCanvas, 0, 0);
-      ctx.restore();
-    }
-
-    function layout() {
-      const rect = screen.getBoundingClientRect();
-      const box = stage.getBoundingClientRect();
-      const left = rect.left - box.left;
-      const top = rect.top - box.top;
-      const barW = 28;
-      const splitLeft = left + (1 - split) * rect.width - barW / 2;
-      splitbar.style.left = Math.max(left, Math.min(left + rect.width - barW, splitLeft)) + "px";
-      splitbar.style.top = top + "px";
-      splitbar.style.height = rect.height + "px";
-      splitbar.style.width = barW + "px";
-      splitbar.setAttribute("aria-valuenow", String(Math.round(split * 100) / 100));
-    }
-
-    function showAt(i) {
-      index = Math.min(last, Math.max(0, i));
-      builtYear = -1;
-      renderSplit(screen, index);
-      hasPresented = true;
-      scrub.value = String(index);
-      layout();
-    }
-
-    function holdFor(i) {
-      const full = Number(hold.value) || 800;
-      if (i === 0) return full;
-      const key = split < 0.5 ? "b" : "a";
-      if (MOVIE[key][i] !== MOVIE[key][i - 1]) return full;
-      return full / 4;
-    }
-
-    function sameLook(a, b) {
-      if (split > 0 && MOVIE.a[a] !== MOVIE.a[b]) return false;
-      if (split < 1 && MOVIE.b[a] !== MOVIE.b[b]) return false;
-      return true;
-    }
-
-    function nextChange(from, delta, single) {
-      let i = from + delta;
-      if (single) return Math.min(last, Math.max(0, i));
-      while (i >= 0 && i <= last && sameLook(i, from)) i += delta;
-      if (i < 0 || i > last) return from;
-      if (delta < 0) {
-        while (i > 0 && sameLook(i - 1, i)) i -= 1;
-      }
-      return i;
-    }
-
-    function startCompare() {
-      const token = ++playToken;
-      playing = true;
-      playBtn.textContent = "Pauzeren";
-      splitbar.hidden = true;
-      buildLayers(0);
-      fromCtx.setTransform(1, 0, 0, 1, 0, 0);
-      fromCtx.drawImage(screen, 0, 0);
-      const holdMs = (Number(hold.value) || 800) * 2.5;
-      const fadeMs = Math.min(3500, holdMs);
-      const cycle = 2 * (holdMs + fadeMs);
-      const started = performance.now();
-      const tick = (now) => {
-        if (token !== playToken) return;
-        const t = now - started;
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.globalAlpha = 1;
-        if (t < 400) {
-          ctx.drawImage(fromCanvas, 0, 0);
-          ctx.globalAlpha = smooth(t / 400);
-          ctx.drawImage(mapBlend, 0, 0);
-        } else {
-          const p = (t - 400) % cycle;
-          let mix = 1;
-          if (p < holdMs) mix = 0;
-          else if (p < holdMs + fadeMs) mix = smooth((p - holdMs) / fadeMs);
-          else if (p >= 2 * holdMs + fadeMs) mix = 1 - smooth((p - 2 * holdMs - fadeMs) / fadeMs);
-          ctx.drawImage(mapBlend, 0, 0);
-          ctx.globalAlpha = mix;
-          ctx.drawImage(satBlend, 0, 0);
-        }
-        ctx.globalAlpha = 1;
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    }
-
-    function stopPlay() {
-      const was = playing;
-      playToken += 1;
-      playing = false;
-      playBtn.textContent = "Afspelen";
-      if (was && MOVIE.compare) {
-        splitbar.hidden = false;
-        showAt(index);
-      }
-    }
-
-    function present(i, token, fadeMs, wipeMs, wipeSign, done) {
-      const my = ++showId;
-      builtYear = -1;
-      renderSplit(toCanvas, i);
-      if (token !== playToken || my !== showId) return;
-      index = Math.min(last, Math.max(0, i));
-      scrub.value = String(index);
-      const wipe = wipeMs > 16 && hasPresented;
-      const blend = !wipe && fadeMs > 16 && hasPresented;
-      if (!wipe && !blend) {
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.globalAlpha = 1;
-        ctx.drawImage(toCanvas, 0, 0);
-        hasPresented = true;
-        layout();
-        if (done) done();
-        return;
-      }
-      fromCtx.setTransform(1, 0, 0, 1, 0, 0);
-      fromCtx.globalAlpha = 1;
-      fromCtx.drawImage(screen, 0, 0);
-      const ms = wipe ? wipeMs : fadeMs;
-      const started = performance.now();
-      const tick = (now) => {
-        if (token !== playToken || my !== showId) return;
-        const amount = Math.min(1, (now - started) / Math.max(1, ms));
-        const eased = smooth(amount);
-        if (wipe) drawWipe(wipeSign, eased);
-        else {
-          ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.globalAlpha = 1;
-          ctx.drawImage(fromCanvas, 0, 0);
-          ctx.globalAlpha = eased;
-          ctx.drawImage(toCanvas, 0, 0);
-          ctx.globalAlpha = 1;
-        }
-        if (amount < 1) requestAnimationFrame(tick);
-        else {
-          hasPresented = true;
-          layout();
-          if (done) done();
-        }
-      };
-      requestAnimationFrame(tick);
-    }
-
-    function startPlay() {
-      if (playing) {
-        stopPlay();
-        showAt(index);
-        return;
-      }
-      if (MOVIE.compare) {
-        startCompare();
-        return;
-      }
-      const token = ++playToken;
-      playing = true;
-      playBtn.textContent = "Pauzeren";
-      let cursor = index >= last ? 0 : index;
-      const step = () => {
-        if (token !== playToken) return;
-        const holdMs = holdFor(cursor);
-        const fade = hasPresented ? Math.min(320, holdMs * 0.5) : 0;
-        present(cursor, token, fade, 0, 1, () => {
-          if (token !== playToken) return;
-          if (cursor >= last) {
-            playing = false;
-            playBtn.textContent = "Afspelen";
-            return;
-          }
-          setTimeout(() => {
-            cursor += 1;
-            step();
-          }, Math.max(0, holdMs - fade));
-        });
-      };
-      step();
-    }
-
-    function splitFrom(clientX) {
-      const rect = screen.getBoundingClientRect();
-      if (!rect.width) return split;
-      const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-      return 1 - fraction;
-    }
-
-    playBtn.addEventListener("click", startPlay);
-    scrub.addEventListener("input", () => {
-      stopPlay();
-      showAt(Number(scrub.value));
-    });
-    hold.addEventListener("change", stopPlay);
-
-    splitbar.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      stopPlay();
-      try { splitbar.setPointerCapture(event.pointerId); } catch (error) { /* The move listener still tracks the pointer. */ }
-      layerDrag = { id: event.pointerId };
-      builtYear = -1;
-      buildLayers(index);
-      split = splitFrom(event.clientX);
-      drawSplit(ctx, split);
-      layout();
-    });
-    splitbar.addEventListener("pointermove", (event) => {
-      if (!layerDrag || event.pointerId !== layerDrag.id) return;
-      split = splitFrom(event.clientX);
-      drawSplit(ctx, split);
-      layout();
-    });
-    const endLayer = (event) => {
-      if (!layerDrag || event.pointerId !== layerDrag.id) return;
-      try { splitbar.releasePointerCapture(event.pointerId); } catch (error) { /* Capture was already released. */ }
-      layerDrag = null;
-      layout();
-    };
-    splitbar.addEventListener("pointerup", endLayer);
-    splitbar.addEventListener("pointercancel", endLayer);
-
-    document.addEventListener("keydown", (event) => {
-      if (event.target.matches("input, select, textarea")) return;
-      if (event.code === "Space") {
-        event.preventDefault();
-        startPlay();
-      } else if ((event.code === "ArrowRight" || event.code === "ArrowLeft") && !MOVIE.compare) {
-        event.preventDefault();
-        stopPlay();
-        const delta = event.code === "ArrowRight" ? 1 : -1;
-        const next = nextChange(index, delta, event.shiftKey);
-        if (next !== index) present(next, playToken, 0, 220, delta);
-      }
-    });
-
-    window.addEventListener("resize", layout);
-    loadImages().then(() => showAt(index));
-  </script>
+<script>${script}</script>
+<script type="application/json" id="movie">${data}</script>
+<script>Playback.mountViewer(JSON.parse(document.getElementById("movie").textContent))</script>
 </body>
 </html>`;
 }
@@ -2801,59 +1917,86 @@ async function downloadZip() {
     if (!(await readyForExport())) return;
     const blobs = [];
     const ids = new Map();
-    const movie = { years: [], a: [], b: [], credits: [], mapYears: [], satYears: [] };
-    const credit = (plan, side) => (panes[side].kind === "sat" ? satelliteCredit(plan.shown || plan.edition) : null);
-    if (compareMode) {
-      setStatus("Zip maken…");
-      const plans = await renderYear(frameIndex, { wait: true, stampBoxes: true });
-      movie.compare = true;
-      movie.years.push(panes.map((pane) => pane.year).join(" · "));
-      movie.a.push(0);
-      movie.b.push(1);
-      blobs.push(await canvasBlob(mapBlendCanvas), await canvasBlob(satBlendCanvas));
-      movie.credits.push(plans.map(credit));
-      movie.mapYears.push(null);
-      movie.satYears.push(null);
-    }
-    for (let i = 0; !compareMode && i < frames.length; i += 1) {
+    const movie = {
+      years: [],
+      map: [],
+      sat: [],
+      mapShown: [],
+      satShown: [],
+      mapCredit: [],
+      satCredit: [],
+    };
+    const bakeKind = async (kind, label) => {
+      const plan = sidePlan(kind, Number(label));
+      const urls = [];
+      for (const layer of plan.layers) {
+        for (const item of layer.items) {
+          if (item.url && !bitmaps.has(item.url)) urls.push(item.url);
+        }
+      }
+      if (urls.length) await Promise.all(urls.map(loadBitmap));
+      const canvas = kind === "map" ? mapBlendCanvas : satBlendCanvas;
+      renderSide(canvas.getContext("2d"), plan, label, kind, null, false);
+      let id = null;
+      if (plan.edition && !plan.empty) {
+        const signature = `${kind}|${plan.layers.flatMap((layer) => layer.items.map((item) => item.url)).join("|") || "leeg"}`;
+        if (!ids.has(signature)) {
+          ids.set(signature, blobs.length);
+          blobs.push(await canvasBlob(canvas));
+        }
+        id = ids.get(signature);
+      }
+      return {
+        id,
+        shown: shownStart(plan),
+        credit: kind === "sat"
+          ? satelliteCredit(plan.shown || plan.edition)
+          : await mapCopyright(plan.shown || plan.edition),
+      };
+    };
+    for (let i = 0; i < frames.length; i += 1) {
       if (exportCancelled) return;
       setStatus(`Zip maken… ${i + 1} van ${frames.length}`);
       exportProgress(i, frames.length);
-      const plans = await renderYear(i, { wait: true, stampIt: false });
       movie.years.push(frames[i].label);
-      for (const side of [0, 1]) {
-        const plan = plans[side];
-        let id = null;
-        if (plan.edition) {
-          const signature = plan.layers.flatMap((layer) => layer.items.map((item) => item.url)).join("|")
-            || `leeg:${panes[side].kind}`;
-          if (!ids.has(signature)) {
-            ids.set(signature, blobs.length);
-            blobs.push(await canvasBlob(side ? satBlendCanvas : mapBlendCanvas));
-          }
-          id = ids.get(signature);
-        }
-        movie[side ? "b" : "a"].push(id);
+      for (const kind of ["map", "sat"]) {
+        const baked = await bakeKind(kind, frames[i].label);
+        movie[kind].push(baked.id);
+        movie[`${kind}Shown`].push(baked.shown);
+        movie[`${kind}Credit`].push(baked.credit);
       }
-      const notes = sharedNotes(plans);
-      movie.credits.push(plans.map(credit));
-      movie.mapYears.push(notes.map);
-      movie.satYears.push(notes.sat);
     }
     if (exportCancelled) return;
     setStatus("Zip inpakken…");
     exportProgress(null);
+    const home = new URL(location.href);
+    home.search = "";
+    home.hash = "";
+    const kaart = [...new Set(movie.mapCredit.filter(Boolean))].join(". ") || "Esri Nederland; Kadaster";
+    const foto = [...new Set(movie.satCredit.filter(Boolean))].join(". ") || "Beeldmateriaal.nl";
+    const playbackEl = [...document.scripts].find((script) => script.src.includes("playback.js"));
+    const playbackResponse = await fetch(playbackEl ? playbackEl.src : "playback.js");
+    if (!playbackResponse.ok) throw new Error("Kon het gedeelde script niet laden.");
+    const playback = await playbackResponse.text();
     const folder = movieBaseName();
     const files = [{
       name: `${folder}/index.html`,
       data: new TextEncoder().encode(viewerPage({
         ...movie,
-        hold: Number(holdInput.value) || 800,
+        hold: holdInput.value || "800",
+        blend: blendMode,
         kinds: panes.map((pane) => pane.kind),
         split: layerSplit,
-        index: compareMode ? 0 : frameIndex,
+        index: frameIndex,
+        indexes: panes.map((pane) => yearIndex(pane.year)),
+        compare: compareMode,
         place: placeName,
-      })),
+        from: fromInput.value,
+        to: toInput.value,
+        view: { x: view.x, y: view.y, zoom: view.zoom },
+        home: home.toString(),
+        source: `Kaart: ${kaart}. Luchtfoto: ${foto}.`,
+      }, playback)),
     }];
     for (let i = 0; i < blobs.length; i += 1) {
       files.push({
@@ -3240,28 +2383,23 @@ function applyShareSetup(setup) {
 }
 
 function shareSetupUrl() {
-  const url = new URL(location.href);
-  for (const key of SHARE_KEYS) url.searchParams.delete(key);
-  const round = (value, digits) => String(Math.round(value * (10 ** digits)) / (10 ** digits));
-  url.searchParams.set("x", round(view.x, 2));
-  url.searchParams.set("y", round(view.y, 2));
-  url.searchParams.set("z", round(view.zoom, 3));
-  url.searchParams.set("jaar", String(compareMode ? panes[0].year : view.year));
-  if (compareMode) {
-    url.searchParams.set("modus", "vergelijken");
-    url.searchParams.set("jaar2", String(panes[1].year));
-  }
-  const shareKind = (kind) => (kind === "map" ? "kaart" : "foto");
-  url.searchParams.set("links", shareKind(panes[0].kind));
-  url.searchParams.set("rechts", shareKind(panes[1].kind));
-  if (fromInput.value) url.searchParams.set("van", fromInput.value);
-  if (toInput.value) url.searchParams.set("tot", toInput.value);
-  url.searchParams.set("sat", usingSatellite() ? "1" : "0");
-  url.searchParams.set("split", round(layerSplit, 3));
-  if (holdInput.value) url.searchParams.set("tempo", holdInput.value);
-  url.searchParams.set("overgang", blendMode === "fade" ? "vervagen" : "horizontaal");
-  if (placeName) url.searchParams.set("plaats", placeName.slice(0, 120));
-  return url.toString();
+  return Playback.shareUrl(location.href, {
+    x: view.x,
+    y: view.y,
+    zoom: view.zoom,
+    year: compareMode ? panes[0].year : view.year,
+    year2: panes[1].year,
+    compare: compareMode,
+    left: panes[0].kind,
+    right: panes[1].kind,
+    from: fromInput.value,
+    to: toInput.value,
+    satellite: usingSatellite(),
+    split: layerSplit,
+    hold: holdInput.value,
+    blend: blendMode,
+    place: placeName,
+  });
 }
 
 function clearShareQuery() {
@@ -3276,26 +2414,7 @@ function clearShareQuery() {
 
 async function copyShareLink() {
   if (!view) return;
-  const link = shareSetupUrl();
-  let copied = false;
-  try {
-    await navigator.clipboard.writeText(link);
-    copied = true;
-  } catch {
-    const field = document.createElement("textarea");
-    field.value = link;
-    field.setAttribute("readonly", "");
-    field.style.position = "fixed";
-    field.style.left = "-9999px";
-    document.body.appendChild(field);
-    field.select();
-    try {
-      copied = document.execCommand("copy");
-    } catch {
-      copied = false;
-    }
-    field.remove();
-  }
+  const copied = await Playback.copyText(shareSetupUrl());
   showShareResult(copied);
   setStatus(copied ? "Link gekopieerd." : "Kon de link niet kopiëren.");
 }
@@ -3619,7 +2738,7 @@ function renderSide(context, plan, label, kind, notes, stampIt, placement) {
     }
   }
   if (!stampIt) return;
-  const credit = kind === "map" ? "Kadaster / Topotijdreis" : satelliteCredit(plan.shown || plan.edition);
+  const credit = kind === "map" ? mapCredit(plan.shown || plan.edition) : satelliteCredit(plan.shown || plan.edition);
   stamp(label, context, credit, notes, placement);
 }
 
@@ -4303,6 +3422,8 @@ async function bootMap() {
     const [maps, photos] = await Promise.all([discoverMaps(), discoverSatellite().catch(() => [])]);
     mapEditions = maps;
     satAll = photos;
+    loadMapCopyrights(mapEditions);
+    fillColophon();
     fillRangeSelects(mapEditions);
     kindInfo.map = await loadTileInfo(mapEditions.at(-1));
     const photo = satAll.find((edition) => !edition.base) || satAll[0];
