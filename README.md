@@ -1,6 +1,6 @@
-# Tijdreis
+# Tijdmachine
 
-Tijdreis toont één plek in Nederland door de jaren heen. Historische topografische kaarten en luchtfoto’s worden achter elkaar gezet, zodat de plek als een film afspeelt.
+Tijdmachine toont één plek in Nederland door de jaren heen. Historische topografische kaarten en luchtfoto’s worden achter elkaar gezet, zodat de plek als een film afspeelt.
 
 ## Wat je ermee doet
 

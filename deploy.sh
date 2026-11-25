@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST="/media/babylon-web/tijdreis"
+DEST="/media/babylon-web/tijdmachine"
 
 if [[ ! -d /media/babylon-web ]]; then
   echo "Mount or path missing: /media/babylon-web" >&2

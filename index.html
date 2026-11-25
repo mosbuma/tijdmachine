@@ -4,23 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>Tijdreis</title>
-  <meta name="description" content="Eén plek in Nederland door de jaren heen: historische kaarten van het Kadaster en luchtfoto's, afgespeeld als film.">
+  <title>Tijdmachine</title>
+  <meta name="application-name" content="Tijdmachine">
+  <meta name="description" content="Gebruik historische kaarten en luchtfoto's om door de tijd te reizen of om tijden met elkaar te vergelijken.">
   <meta name="theme-color" content="#1c1916">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="nl_NL">
-  <meta property="og:title" content="Tijdreis">
-  <meta property="og:description" content="Eén plek in Nederland door de jaren heen: historische kaarten van het Kadaster en luchtfoto's, afgespeeld als film.">
-  <meta property="og:image" content="og.jpg">
+  <meta property="og:site_name" content="Tijdmachine">
+  <meta property="og:title" content="Tijdmachine">
+  <meta property="og:description" content="Gebruik historische kaarten en luchtfoto's om door de tijd te reizen of om tijden met elkaar te vergelijken.">
+  <meta property="og:image" content="og.jpg?v=2">
   <meta property="og:image:type" content="image/jpeg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="Tijdreis: historische kaarten en luchtfoto's van één plek.">
+  <meta property="og:image:alt" content="Tijdmachine: historische kaarten en luchtfoto's van één plek.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Tijdreis">
-  <meta name="twitter:description" content="Eén plek in Nederland door de jaren heen: historische kaarten van het Kadaster en luchtfoto's, afgespeeld als film.">
-  <meta name="twitter:image" content="og.jpg">
-  <meta name="twitter:image:alt" content="Tijdreis: historische kaarten en luchtfoto's van één plek.">
+  <meta name="twitter:title" content="Tijdmachine">
+  <meta name="twitter:description" content="Gebruik historische kaarten en luchtfoto's om door de tijd te reizen of om tijden met elkaar te vergelijken.">
+  <meta name="twitter:image" content="og.jpg?v=2">
+  <meta name="twitter:image:alt" content="Tijdmachine: historische kaarten en luchtfoto's van één plek.">
   <style>
     :root {
       color-scheme: dark;
@@ -51,6 +53,11 @@
       background: var(--ink);
       color: var(--paper);
       font: 16px/1.45 system-ui, "Segoe UI", "Helvetica Neue", sans-serif;
+      user-select: none;
+    }
+
+    input, textarea {
+      user-select: text;
     }
 
     #fit {
@@ -59,65 +66,72 @@
       min-width: 0;
       min-height: 0;
       display: flex;
-      flex-direction: column;
-      container-type: inline-size;
+      flex-direction: row;
+      align-items: stretch;
     }
 
-    header, form, #load-progress, .transport {
-      width: min(1100px, calc(100% - 32px));
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-    header {
+    #main {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
       display: flex;
-      justify-content: space-between;
-      gap: 24px;
-      align-items: end;
-      padding: 12px 0 10px;
-      flex: 0 0 auto;
-      border-bottom: 1px solid var(--line);
+      flex-direction: column;
+      container-type: size;
     }
 
-    .title {
+    form, .transport, .stage {
+      width: min(calc(100% - 16px), calc((100cqh - 210px) * 16 / 9 + 16px));
+      margin-left: auto;
+      margin-right: 16px;
+    }
+
+    .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      align-self: stretch;
+      flex: 0 0 auto;
+      padding: 0 4px 0 8px;
     }
 
     h1 {
       margin: 0;
-      font-family: Palatino, "Palatino Linotype", "Times New Roman", serif;
-      font-size: 32px;
-      font-weight: 500;
-      letter-spacing: -0.03em;
+      padding: 16px 0;
+      font-family: Comfortaa, "Noto Sans", system-ui, sans-serif;
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
       line-height: 1;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
     }
 
-    #status {
-      margin: 0;
-      max-width: 26rem;
-      text-align: right;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.35;
+    .form-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: end;
+      gap: 8px;
+      flex: 0 0 auto;
     }
 
-    #setup-header:has(.title[hidden]) {
-      justify-content: flex-start;
-    }
-
-    #setup-header:has(.title[hidden]) #status {
-      max-width: none;
-      text-align: left;
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
 
     form {
+      --col-gap: 12px;
       display: flex;
       flex-wrap: wrap;
-      gap: 10px 12px;
+      gap: 10px var(--col-gap);
       align-items: end;
-      padding: 10px 0 8px;
+      padding: 10px 0 4px;
       flex: 0 0 auto;
     }
 
@@ -131,16 +145,42 @@
       text-transform: uppercase;
     }
 
-    label.place { flex: 1 1 100%; }
+    .place-label { align-self: end; }
 
-    .place-row {
+    .place-value {
       display: flex;
+      align-items: center;
       gap: 8px;
+      height: 36px;
+      color: var(--paper);
+      font-size: 15px;
+      letter-spacing: 0;
+      text-transform: none;
     }
 
-    .place-row input { flex: 1 1 auto; width: 100%; }
+    #place-name {
+      max-width: 16rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
 
-    #search { flex: 0 0 auto; }
+    #search {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      margin-right: calc(1.5 * 36px - var(--col-gap));
+      flex: 0 0 auto;
+    }
+
+    .place-query {
+      color: var(--ink);
+      font-size: 14px;
+      letter-spacing: 0;
+      text-transform: none;
+    }
 
     label.check {
       flex-direction: row;
@@ -184,6 +224,7 @@
 
     input[type="number"] { width: 96px; }
     #from, #to { width: 110px; }
+    #layer-left, #layer-right { width: 6.75rem; }
 
     .stage-wrap {
       position: relative;
@@ -191,67 +232,82 @@
       min-width: 0;
       min-height: 0;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       width: 100%;
       height: 100%;
     }
 
-    .wipe-bars {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 3;
+    #map {
+      width: 100%;
+      height: auto;
+      max-height: none;
+      aspect-ratio: 16 / 9;
     }
 
-    .wipe-bars[hidden] { display: none; }
+    .splitbar {
+      display: grid;
+      grid-template-columns: 3.2rem 30px minmax(0, 1fr) 30px 3.2rem;
+      gap: 10px;
+      align-items: center;
+      margin-top: 8px;
+      flex: 0 0 auto;
+    }
 
-    .layer-bar {
+    .splitbar[hidden] { display: none; }
+
+    .splitbar .bar-year:first-child { text-align: right; }
+
+    .splitbar .track {
+      height: 36px;
+      margin: 0 22px;
+      cursor: ew-resize;
+    }
+
+    .splitbar .track::before {
+      content: "";
       position: absolute;
-      width: 28px;
+      left: -12px;
+      right: -12px;
+      top: -14px;
+      bottom: -14px;
+    }
+
+    .splitbar .zones { top: 14px; }
+
+    .splitbar .handle {
+      top: 2px;
+      width: 34px;
+      height: 32px;
+      margin-left: -17px;
+      border-radius: 7px;
+      border-color: #1c1916;
+      cursor: ew-resize;
       pointer-events: auto;
       touch-action: none;
-      cursor: ew-resize;
-      background: transparent;
-      border: none;
     }
 
-    .layer-bar::before {
+    .splitbar .handle::before {
+      content: "";
+      position: absolute;
+      inset: -12px -10px;
+    }
+
+    .splitbar .handle::after {
       content: "";
       position: absolute;
       left: 50%;
-      top: 0;
-      bottom: 0;
-      width: 2px;
-      margin-left: -1px;
-      background: rgba(243, 236, 223, 0.85);
-      box-shadow: 0 0 6px rgba(0, 0, 0, 0.35);
+      top: 7px;
+      bottom: 7px;
+      width: 10px;
+      margin-left: -5px;
+      background: linear-gradient(to right, #1c1916 0 2px, transparent 2px 4px, #1c1916 4px 6px, transparent 6px 8px, #1c1916 8px 10px);
       pointer-events: none;
     }
 
-    .layer-thumb {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 2px;
-      min-width: 34px;
-      height: 34px;
-      padding: 0 6px;
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: 600;
-      line-height: 1;
-      letter-spacing: -0.08em;
-      color: var(--ink);
-      background: rgba(243, 236, 223, 0.96);
-      border: 1px solid #c9bfb1;
-      box-shadow: 0 1px 6px rgba(28, 25, 22, 0.4);
-      pointer-events: none;
-    }
+    .splitbar .kind-button { --kind: var(--red); }
+    .splitbar .kind-button.sat { --kind: #4f9a92; }
 
     button {
       cursor: pointer;
@@ -274,58 +330,25 @@
 
     #setup-fields { display: contents; }
 
-    #share {
-      align-self: end;
-      height: 36px;
-      padding: 6px 12px;
-      flex: 0 0 auto;
-      white-space: nowrap;
-    }
-
-    #load-progress {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin: 0 auto 8px;
-      padding: 10px 12px;
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      flex: 0 0 auto;
-    }
-
-    #load-status {
-      margin: 0;
-      color: var(--paper);
-      font-size: 14px;
-      line-height: 1.35;
-    }
-
-    .load-row {
+    #share, #export, #settings-open, #help-open {
       display: grid;
-      grid-template-columns: 5.5rem minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
-      color: var(--muted);
-      font-size: 12px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      flex: 0 0 auto;
     }
 
-    .load-row:has(.playbar[hidden]) { display: none; }
-
-    .load-count {
-      letter-spacing: 0;
-      text-transform: none;
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
+    #share .icon-copied { display: none; }
+    #share.copied .icon-share { display: none; }
+    #share.copied .icon-copied { display: block; }
+    #share.failed { color: var(--red); }
 
     .stage {
-      width: min(1100px, calc(100% - 32px));
-      margin: 0 auto;
+      margin-top: 0;
+      margin-bottom: 0;
       background: var(--surface);
-      padding: 8px;
+      padding: 4px 8px 8px;
       flex: 1 1 auto;
       min-width: 0;
       min-height: 0;
@@ -365,10 +388,10 @@
 
     .transport {
       display: flex;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
       gap: 14px;
       align-items: center;
-      padding: 10px 0 12px;
+      padding: 12px 0 10px;
       flex: 0 0 auto;
       border-top: 1px solid var(--line);
       touch-action: none;
@@ -382,25 +405,6 @@
       gap: 6px;
     }
 
-    .playbar {
-      display: flex;
-      height: 8px;
-      gap: 1px;
-      background: var(--surface);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-
-    .playbar[hidden] { display: none; }
-
-    .playbar i { flex: 1 1 0; min-width: 1px; }
-    .playbar i.wait { background: #3a332c; }
-    .playbar i.grey { background: #8d8478; }
-    .playbar i.red { background: var(--red); }
-    .playbar i.green { background: #3c8f4e; }
-
-    .playbar i { cursor: default; }
-
     .yearbar {
       --kind: var(--red);
       display: grid;
@@ -410,6 +414,47 @@
     }
 
     .yearbar.sat { --kind: #4f9a92; }
+
+    .yearbar .track {
+      height: 36px;
+      margin: 0 22px;
+      cursor: ew-resize;
+    }
+
+    .yearbar .track::before {
+      content: "";
+      position: absolute;
+      left: -22px;
+      right: -22px;
+      top: 0;
+      bottom: 0;
+    }
+
+    .yearbar .zones { top: 14px; }
+
+    .yearbar .handle {
+      top: 2px;
+      width: 34px;
+      height: 32px;
+      margin-left: -17px;
+      border-radius: 7px;
+      border-color: #1c1916;
+      cursor: ew-resize;
+      pointer-events: auto;
+      touch-action: none;
+    }
+
+    .yearbar .handle::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 7px;
+      bottom: 7px;
+      width: 10px;
+      margin-left: -5px;
+      background: linear-gradient(to right, #1c1916 0 2px, transparent 2px 4px, #1c1916 4px 6px, transparent 6px 8px, #1c1916 8px 10px);
+      pointer-events: none;
+    }
 
     .kind-button {
       display: grid;
@@ -453,9 +498,20 @@
       background: repeating-linear-gradient(135deg, #5a5249 0 3px, #2f2924 3px 6px);
     }
 
+    .zones i.wait { background: #2c2824; }
+
+    .zones i.fetch {
+      background: var(--kind);
+      animation: fetch-pulse 1s ease-in-out infinite;
+    }
+
     .zones i.have { background: var(--kind); }
 
     .zones i.repeat { background: #77706a; }
+
+    @keyframes fetch-pulse {
+      50% { opacity: 0.4; }
+    }
 
     .handle {
       position: absolute;
@@ -482,16 +538,50 @@
     .compare .yearbar.active .handle { outline: 2px solid var(--paper); outline-offset: 1px; }
     .compare .yearbar:not(.active) .handle { opacity: 0.8; }
 
-    .mode-switch {
-      display: flex;
-      border-radius: 2px;
-      overflow: hidden;
+    #yearbars:not(.compare) .yearbar:first-child { position: relative; z-index: 1; }
+
+    #yearbars:not(.compare) .yearbar:first-child .handle {
+      height: 74px;
+      z-index: 1;
     }
 
-    .mode-switch button {
-      border-radius: 0;
-      padding-left: 10px;
-      padding-right: 10px;
+    #yearbars:not(.compare) .yearbar:last-child .handle { visibility: hidden; }
+
+    .mode-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .mode-switch {
+      display: flex;
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid var(--muted);
+      border-radius: calc(var(--radius) + 2px);
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .transport-controls .mode-switch button {
+      height: 30px;
+      padding: 4px 12px;
+      white-space: nowrap;
+    }
+
+    .mode-switch button[aria-pressed="false"] {
+      background: transparent;
+      color: var(--paper);
+      border-color: transparent;
+    }
+
+    .mode-switch button[aria-pressed="false"]:hover:not(:disabled) {
+      background: var(--surface);
+      color: var(--paper);
     }
 
     .mode-switch button[aria-pressed="true"] {
@@ -505,14 +595,28 @@
     .transport-controls {
       display: flex;
       flex-shrink: 0;
-      align-items: center;
+      align-items: end;
+      align-self: end;
       gap: 8px;
     }
 
-    .transport-controls button,
-    .transport-controls select {
-      height: 40px;
+    .transport-controls button {
+      height: 36px;
     }
+
+    #play {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+    }
+
+    #play .icon-stop,
+    #play.playing .icon-play { display: none; }
+
+    #play.playing .icon-stop { display: block; }
 
     #hold {
       min-width: 6.5rem;
@@ -534,23 +638,6 @@
       color: var(--paper);
     }
 
-    #help-open {
-      display: grid;
-      place-items: center;
-      width: 28px;
-      height: 28px;
-      padding: 0;
-      border: 0;
-      border-radius: 50%;
-      background: transparent;
-      color: var(--muted);
-    }
-
-    #help-open:hover:not(:disabled) {
-      background: transparent;
-      color: var(--paper);
-    }
-
     dialog {
       width: min(38rem, calc(100% - 32px));
       max-height: calc(100dvh - 24px);
@@ -563,24 +650,15 @@
     }
 
     @container (max-width: 720px) {
-      header, form, #load-progress, .transport, .stage {
-        width: calc(100% - 16px);
+      form, .transport, .stage {
+        width: calc(100% - 12px);
+        margin-right: 12px;
       }
 
-      header {
-        flex-wrap: wrap;
-        gap: 6px 12px;
-        align-items: center;
-        padding-top: 8px;
+      form {
+        --col-gap: 10px;
+        gap: 8px var(--col-gap);
       }
-
-      #status {
-        flex: 1 1 12rem;
-        max-width: none;
-        text-align: left;
-      }
-
-      form { gap: 8px 10px; }
 
       .transport {
         flex-wrap: wrap;
@@ -612,41 +690,177 @@
       margin-top: 16px;
     }
 
-    #share-hint { width: min(28rem, calc(100% - 32px)); }
+    #settings { width: min(24rem, calc(100% - 32px)); }
+
+    #settings label, #settings legend {
+      color: var(--ink);
+      font-size: 14px;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    #settings label + label { margin-top: 12px; }
+
+    #settings select { width: 100%; }
+
+    .cache-stats h3 {
+      margin: 18px 0 6px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .cache-stats dl {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 14px;
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .cache-stats dt { color: #6d6256; }
+    .cache-stats dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+    #help {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      max-height: none;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    #help::backdrop { background: rgba(12, 11, 10, 0.6); }
+
+    #help .help-card {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      z-index: 1;
+      width: min(62rem, calc(100% - 32px));
+      max-height: calc(100% - 48px);
+      overflow: auto;
+      transform: translate(-50%, -50%);
+      padding: 12px 22px 8px;
+      border-radius: var(--radius);
+      background: var(--paper);
+      color: var(--ink);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+    }
+
+    #help .help-card h2 { margin: 0 0 6px; font-size: 20px; }
+    #help .help-card p { margin: 0 0 6px; font-size: 14.5px; line-height: 1.35; }
+    #help .help-columns {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 0 28px;
+      align-items: start;
+    }
+    #help .help-card .dialog-actions {
+      position: sticky;
+      bottom: 0;
+      margin-top: 4px;
+      padding-top: 6px;
+      background: var(--paper);
+    }
+    #help ul { margin: 0; padding-left: 18px; line-height: 1.35; font-size: 14.5px; }
+    #help li { margin-bottom: 4px; }
+    #help .help-small { color: #6d6256; font-size: 14px; }
+
+    @media (max-width: 800px) {
+      #help .help-columns { grid-template-columns: 1fr; }
+      #help .help-card { width: calc(100% - 16px); }
+    }
+
+    #help-tips {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .help-tip {
+      position: absolute;
+      padding: 5px 10px;
+      border-radius: 4px;
+      background: #f7d774;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+    }
+
+    .help-tip.wide {
+      white-space: normal;
+      text-align: center;
+      font-weight: 500;
+      line-height: 1.4;
+    }
+
+    .help-stem { position: absolute; background: #f7d774; }
+
+    .help-ring {
+      position: absolute;
+      border: 2px solid #f7d774;
+      border-radius: 5px;
+    }
+
+    #export-menu, #export-busy { width: min(28rem, calc(100% - 32px)); }
+
+    .export-options {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .export-options button {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      height: auto;
+      padding: 10px 12px;
+      text-align: left;
+    }
+
+    .export-options button span {
+      color: #6d6256;
+      font-size: 14px;
+      font-weight: 400;
+    }
 
     #export-busy { width: min(24rem, calc(100% - 32px)); }
     #export-busy::backdrop { background: rgba(28, 25, 22, 0.35); }
     #export-busy progress { width: 100%; height: 10px; accent-color: var(--red); }
     .export-hint { color: #6d6256; font-size: 14px; }
     .export-hint:empty { display: none; }
-    #share-hint .dialog-actions { justify-content: flex-end; }
-
     dialog .linkish { color: #6d6256; }
     dialog .linkish:hover:not(:disabled) { color: var(--ink); background: transparent; }
   </style>
 </head>
 <body>
   <div id="fit">
-  <header id="setup-header">
-    <div class="title">
-      <h1>Tijdreis</h1>
-      <button id="help-open" type="button" aria-label="Hulp">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"></circle>
-          <path d="M9.2 9.3a2.8 2.8 0 1 1 3.5 2.6c-.7.3-1.1.8-1.1 1.5V14.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
-          <circle cx="11.6" cy="17.2" r="0.9" fill="currentColor"></circle>
-        </svg>
-      </button>
-    </div>
-    <p id="status">Kaart openen…</p>
-  </header>
+  <div class="brand">
+  <h1>Tijdmachine</h1>
+  </div>
+  <div id="main">
+  <p id="status" class="sr-only" aria-live="polite">Kaart openen…</p>
 
   <form id="form">
     <div id="setup-fields">
-    <label class="place">Plaats
-      <span class="place-row">
-        <input id="place" type="text" spellcheck="false" autocomplete="off" placeholder="Adres of coördinaten">
-        <button id="search" type="button">Zoeken</button>
+    <label class="place-label">Plaats
+      <span class="place-value">
+      <span id="place-name">…</span>
+      <button id="search" type="button" aria-label="Plaats zoeken" title="Plaats zoeken">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
+          <path d="M15.5 15.5 21 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+        </svg>
+      </button>
       </span>
     </label>
     <label>Van
@@ -655,31 +869,74 @@
     <label>Tot
       <select id="to"></select>
     </label>
+    <div class="transport-controls" id="transport-controls" hidden>
+      <label>Laag Links
+        <select id="layer-left" aria-label="Laag links">
+          <option value="map">Kaart</option>
+          <option value="sat">Foto</option>
+        </select>
+      </label>
+      <label>Laag Rechts
+        <select id="layer-right" aria-label="Laag rechts">
+          <option value="map">Kaart</option>
+          <option value="sat">Foto</option>
+        </select>
+      </label>
+      <div class="mode-field">
+      <span id="mode-label">Kijkmodus</span>
+      <div class="mode-switch" role="group" aria-labelledby="mode-label">
+        <button id="mode-sync" type="button" aria-pressed="true" title="Beide balken lopen samen door de jaren.">Door De Tijd Schuiven</button>
+        <button id="mode-compare" type="button" aria-pressed="false" title="Elke balk een eigen jaar; afspelen laat de twee beelden in elkaar overvloeien.">Twee Jaren Vergelijken</button>
+      </div>
+      </div>
     </div>
-    <button id="share" type="button">Delen</button>
+    </div>
+    <div class="form-actions">
+    <button id="share" type="button" aria-label="Link kopiëren" title="Link kopiëren">
+      <svg class="icon-share" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <circle cx="18" cy="5" r="2.2" fill="none" stroke="currentColor" stroke-width="2"></circle>
+        <circle cx="6" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="2"></circle>
+        <circle cx="18" cy="19" r="2.2" fill="none" stroke="currentColor" stroke-width="2"></circle>
+        <path d="M8.1 11.1 15.8 6.6M8.1 12.9l7.7 4.5" fill="none" stroke="currentColor" stroke-width="2"></path>
+      </svg>
+      <svg class="icon-copied" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <path d="M5 12.5 10 17.5 19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+    </button>
+    <button id="export" type="button" disabled aria-label="Exporteren" title="Exporteren">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <path d="M12 4v9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+        <path d="m8 10 4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+        <path d="M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+      </svg>
+    </button>
+    <button id="settings-open" type="button" aria-label="Instellingen" title="Instellingen">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <path fill="currentColor" d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97s-.03-.66-.07-1l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.49.49 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 10c-.04.34-.07.67-.07 1s.03.65.07.97l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65Z"></path>
+      </svg>
+    </button>
+    <button id="help-open" type="button" aria-label="Hulp" title="Hulp">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"></circle>
+        <path d="M9.2 9.4a2.8 2.8 0 1 1 3.5 2.6c-.7.3-1.1.8-1.1 1.5V14.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+        <circle cx="11.6" cy="17.3" r="1" fill="currentColor"></circle>
+      </svg>
+    </button>
+    </div>
   </form>
-
-  <div id="load-progress" hidden>
-    <p id="load-status">Bezig met ophalen…</p>
-    <div class="load-row">
-      <span>Kaart</span>
-      <div id="mapbar" class="playbar" role="img" aria-label="Voortgang kaart" hidden></div>
-      <span id="map-count" class="load-count"></span>
-    </div>
-    <div class="load-row">
-      <span>Foto's</span>
-      <div id="satbar" class="playbar" role="img" aria-label="Voortgang foto's" hidden></div>
-      <span id="sat-count" class="load-count"></span>
-    </div>
-  </div>
 
   <div class="stage" id="stage" role="application" aria-label="Kaart">
     <div class="stage-wrap">
       <canvas id="map" width="1280" height="720" aria-label="Kaart"></canvas>
-      <div class="wipe-bars" id="wipe-bars" hidden>
-        <div class="layer-bar" id="layer-bar" role="slider" aria-label="Kaart en satelliet" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="1">
-          <div class="layer-thumb" id="layer-thumb" aria-hidden="true"><span>←</span><span>→</span></div>
+      <div class="splitbar" id="splitbar" hidden>
+        <span class="bar-year"></span>
+        <button class="kind-button" type="button"></button>
+        <div class="track" id="split-track" role="slider" aria-label="Scheiding tussen links en rechts" aria-valuemin="0" aria-valuemax="1">
+          <div class="zones" id="split-zones"></div>
+          <div class="handle" id="split-handle"></div>
         </div>
+        <button class="kind-button" type="button"></button>
+        <span class="bar-year"></span>
       </div>
     </div>
   </div>
@@ -703,25 +960,41 @@
         <span class="bar-year"></span>
       </div>
     </div>
-    <div class="transport-controls" id="transport-controls" hidden>
-      <div class="mode-switch" role="group" aria-label="Afspelen">
-        <button id="mode-sync" type="button" aria-pressed="true" title="Beide balken lopen samen door de jaren.">Samen</button>
-        <button id="mode-compare" type="button" aria-pressed="false" title="Elke balk een eigen jaar; afspelen laat de twee beelden in elkaar overvloeien.">Vergelijken</button>
-      </div>
-      <button id="play" type="button" disabled>Afspelen</button>
-      <select id="hold" aria-label="Tempo">
-        <option value="400">snel</option>
-        <option value="800" selected>normaal</option>
-        <option value="1500">langzaam</option>
-      </select>
-      <button id="download" type="button" disabled>WebM</button>
-      <button id="mp4" type="button" disabled title="MP4 voor Signal en WhatsApp.">MP4</button>
-      <button id="zip" type="button" disabled title="Map met viewer en beelden. Uitpakken en index.html openen.">Zip</button>
-    </div>
+    <button id="play" type="button" disabled aria-label="Afspelen" title="Afspelen">
+      <svg class="icon-play" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <path fill="currentColor" d="M8 5.14v13.72L19.5 12 8 5.14Z"></path>
+      </svg>
+      <svg class="icon-stop" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <path fill="currentColor" d="M6 6h12v12H6Z"></path>
+      </svg>
+    </button>
   </div>
 
   <span id="year" hidden aria-hidden="true"></span>
   </div>
+  </div>
+
+  <dialog id="export-menu">
+    <h2>Exporteren</h2>
+    <div class="export-options">
+      <button id="download" type="button" disabled>
+        <strong>WebM</strong>
+        <span>Film van het beeld zoals het nu staat. Bij Twee Jaren Vergelijken de overgang tussen de twee beelden.</span>
+      </button>
+      <button id="mp4" type="button" disabled>
+        <strong>MP4</strong>
+        <span>Dezelfde film, in een bestand dat Signal en WhatsApp kunnen afspelen.</span>
+      </button>
+      <button id="zip" type="button" disabled>
+        <strong>Zip</strong>
+        <span>De beelden plus één bladzijde. Uitpakken en index.html openen; internet is dan niet nodig.</span>
+      </button>
+    </div>
+    <div class="dialog-actions">
+      <span></span>
+      <button id="export-menu-close" class="primary" type="button">Sluiten</button>
+    </div>
+  </dialog>
 
   <dialog id="export-busy">
     <h2 id="export-title">Film maken</h2>
@@ -734,27 +1007,68 @@
     </div>
   </dialog>
 
-  <dialog id="help">
-    <h2>Zo gebruik je Tijdreis</h2>
-    <p>Zoek een plaats om de kaart daarheen te verplaatsen. Jaar, zoom en jaarbereik blijven staan.</p>
-    <p>Sleep de kaart en zoom met een knijpbeweging of met scrollen. Staat het beeld even stil, dan haalt Tijdreis eerst het jaar op dat je ziet en daarna de andere jaren tussen Van en Tot, voor dit beeld en deze zoom. De balken laten de voortgang zien. Tegels die al in deze browser staan worden niet opnieuw opgehaald; boven 1 GB ruimen de langst niet gebruikte tegels op.</p>
-    <p>Sleep de verticale scheidslijn op de kaart links/rechts. De bovenste balk hoort bij het beeld links van de lijn, de onderste bij het beeld rechts. Met het pictogram voor een balk kies je kaart of luchtfoto, dus ook kaart naast kaart of foto naast foto. Gekleurd zijn de jaren met een nieuw beeld, grijs de jaren waarin het vorige beeld blijft staan, en grijs gestreept betekent: nog geen beeld. Ontbreekt een beeld, dan blijft het vorige staan, of je ziet een doorkruist pictogram als er niets eerder is. Ligt het beeld in de provincie Utrecht, dan zijn er ook luchtfoto's van 1950, 1996, 2000, 2003 en 2025.</p>
-    <p>Samen: beide balken wijzen hetzelfde jaar aan en Afspelen loopt door alle jaren; zo zie je verandering in de tijd. Vergelijken: elke balk heeft een eigen jaar en Afspelen laat de twee beelden in elkaar overvloeien; zo vergelijk je twee momenten. De pijltjestoetsen links/rechts springen naar het volgende nieuwe beeld, met Shift één jaar. Bij Vergelijken kies je met omhoog/omlaag de balk.</p>
-    <p>Plaats, zoom, jaren, jaarbereik en de keuzes op de balken worden in deze browser bewaard. Delen kopieert een link met dat alles en de stand van de scheiding. Een nieuw beeld krijgt de volle duur, een herhaling een kwart. Gelijk ogende bladen worden niet opnieuw opgehaald.</p>
-    <p>WebM neemt de film op van het beeld zoals het nu staat; bij Vergelijken is dat de overgang tussen de twee beelden. MP4 doet hetzelfde in een bestand dat Signal en WhatsApp kunnen afspelen. Zip bewaart de kant-en-klare beelden plus één bladzijde: uitpakken en index.html openen. Afspelen, de tijdbalk en de scheidslijn werken dan zonder internet. Ontbreken er nog tegels, dan worden die eerst opgehaald.</p>
+  <dialog id="settings">
+    <h2>Instellingen</h2>
+    <label>Afspeeltempo
+      <select id="hold" aria-label="Afspeeltempo">
+        <option value="400">snel</option>
+        <option value="800" selected>normaal</option>
+        <option value="1500">langzaam</option>
+      </select>
+    </label>
+    <label>Overgang
+      <select id="blend" aria-label="Overgang">
+        <option value="x">Horizontaal vegen</option>
+        <option value="fade">Vervagen</option>
+      </select>
+    </label>
+    <section class="cache-stats">
+      <h3>Opslag</h3>
+      <dl id="cache-stats"></dl>
+    </section>
     <div class="dialog-actions">
       <button id="forget" class="linkish" type="button">Vergeet opgeslagen tegels</button>
-      <button id="help-close" class="primary" type="button">Sluiten</button>
+      <button id="settings-close" class="primary" type="button">Sluiten</button>
     </div>
   </dialog>
 
-  <dialog id="share-hint">
-    <p>De jaren voor deze plek worden vanzelf opgehaald. Druk op Afspelen om de film te zien, of op het vraagteken voor meer informatie.</p>
+  <dialog id="place-dialog">
+    <h2>Plaats zoeken</h2>
+    <label class="place-query">Plaats, adres of coördinaten
+      <input id="place" type="text" spellcheck="false" autocomplete="off" placeholder="Bijvoorbeeld Utrecht of 155000, 463000">
+    </label>
+    <p id="place-error" class="export-hint"></p>
     <div class="dialog-actions">
-      <button id="share-hint-close" class="primary" type="button">OK</button>
+      <button id="place-cancel" type="button">Annuleren</button>
+      <button id="place-go" class="primary" type="button">Zoeken</button>
     </div>
   </dialog>
 
-  <script src="app.js?v=61"></script>
+  <dialog id="help" aria-labelledby="help-title">
+    <div id="help-tips" aria-hidden="true"></div>
+    <div class="help-card">
+      <h2 id="help-title">Zo werkt Tijdmachine</h2>
+      <div class="help-columns">
+        <div>
+          <p>Je kijkt naar twee lagen over elkaar: een linker en een rechter. Elke laag is een kaart of een luchtfoto, dus ook kaart naast kaart of foto naast foto kan.</p>
+          <p>Er zijn twee manieren van kijken:</p>
+          <ul>
+            <li><strong>Door De Tijd Schuiven</strong>: schuif door de tijd en zie hoe de plek verandert.</li>
+            <li><strong>Twee Jaren Vergelijken</strong>: geef elke laag een eigen jaar en vergelijk het ene jaartal met het andere door de scheiding te verschuiven.</li>
+          </ul>
+        </div>
+        <div>
+          <p>Met <strong>Exporteren</strong> maak je een film of een zip die zonder internet werkt. Met <strong>Link kopiëren</strong> kopieer je een link naar precies dit beeld.</p>
+          <p class="help-small">Op de jaarbalken: gekleurd is een nieuw beeld, grijs hetzelfde beeld als ervoor, gestreept geen beeld. De pijltjestoetsen springen naar het volgende nieuwe beeld.</p>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <span></span>
+        <button id="help-close" class="primary" type="button">Sluiten</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="app.js?v=121"></script>
 </body>
 </html>

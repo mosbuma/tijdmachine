@@ -26,37 +26,51 @@ const DEFAULT_VIEW = {
 };
 
 const placeInput = document.querySelector("#place");
+const placeNameEl = document.querySelector("#place-name");
+const placeDialog = document.querySelector("#place-dialog");
+const placeError = document.querySelector("#place-error");
+const placeCancel = document.querySelector("#place-cancel");
+const placeGo = document.querySelector("#place-go");
 const fromInput = document.querySelector("#from");
 const toInput = document.querySelector("#to");
 const stageWrap = document.querySelector(".stage-wrap");
-const wipeBars = document.querySelector("#wipe-bars");
-const layerBar = document.querySelector("#layer-bar");
+const wipeBars = document.querySelector("#splitbar");
+const layerBar = document.querySelector("#split-track");
+const splitZones = document.querySelector("#split-zones");
+const splitHandle = document.querySelector("#split-handle");
+const splitKinds = [...document.querySelectorAll("#splitbar .kind-button")];
+const splitYears = [...document.querySelectorAll("#splitbar .bar-year")];
 const statusEl = document.querySelector("#status");
-const loadProgress = document.querySelector("#load-progress");
-const loadStatus = document.querySelector("#load-status");
-const mapCount = document.querySelector("#map-count");
-const satCount = document.querySelector("#sat-count");
 const canvas = document.querySelector("#map");
 const playButton = document.querySelector("#play");
 const yearBars = document.querySelector("#yearbars");
 const barEls = [...document.querySelectorAll(".yearbar")];
 const modeSyncButton = document.querySelector("#mode-sync");
 const modeCompareButton = document.querySelector("#mode-compare");
+const layerSelects = [
+  document.querySelector("#layer-left"),
+  document.querySelector("#layer-right"),
+];
 const transport = document.querySelector("#transport");
 const transportControls = document.querySelector("#transport-controls");
-const mapBar = document.querySelector("#mapbar");
-const satBar = document.querySelector("#satbar");
 const yearEl = document.querySelector("#year");
 const holdInput = document.querySelector("#hold");
+const settingsDialog = document.querySelector("#settings");
+const settingsOpen = document.querySelector("#settings-open");
+const settingsClose = document.querySelector("#settings-close");
+const blendInput = document.querySelector("#blend");
+const BLENDS = new Set(["x", "fade"]);
+let blendMode = "x";
 const shareButton = document.querySelector("#share");
+const exportButton = document.querySelector("#export");
+const exportMenu = document.querySelector("#export-menu");
+const exportMenuClose = document.querySelector("#export-menu-close");
 const downloadButton = document.querySelector("#download");
 const mp4Button = document.querySelector("#mp4");
 const zipButton = document.querySelector("#zip");
 const forgetButton = document.querySelector("#forget");
 const searchButton = document.querySelector("#search");
 const helpDialog = document.querySelector("#help");
-const shareHint = document.querySelector("#share-hint");
-const shareHintClose = document.querySelector("#share-hint-close");
 const helpOpen = document.querySelector("#help-open");
 const helpClose = document.querySelector("#help-close");
 const exportDialog = document.querySelector("#export-busy");
@@ -159,6 +173,7 @@ let session = {
   from: "",
   to: "",
   hold: "800",
+  blend: "x",
   satellite: false,
 };
 
@@ -169,16 +184,24 @@ offCtx.imageSmoothingQuality = "high";
 
 document.querySelector("#form").addEventListener("submit", (event) => {
   event.preventDefault();
-  locatePlace();
 });
+
+searchButton.addEventListener("click", () => {
+  placeError.textContent = "";
+  placeInput.value = "";
+  if (!placeDialog.open) placeDialog.showModal();
+  placeInput.focus();
+});
+
+placeCancel.addEventListener("click", () => placeDialog.close());
+placeDialog.addEventListener("click", (event) => {
+  if (event.target === placeDialog) placeDialog.close();
+});
+placeGo.addEventListener("click", () => locatePlace());
 
 placeInput.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   event.preventDefault();
-  locatePlace();
-});
-
-searchButton.addEventListener("click", () => {
   locatePlace();
 });
 
@@ -204,16 +227,321 @@ function markHelpShown() {
   }
 }
 
+const helpTips = document.querySelector("#help-tips");
+const HELP_TIPS = [
+  { target: "#search", text: "Plaats zoeken", side: "below" },
+  { target: "#from", text: "Eerste jaar", side: "below", pin: true },
+  { target: "#to", text: "Laatste jaar", side: "below" },
+  { target: "#layer-left", text: "Linker laag: kaart of foto", side: "below" },
+  { target: "#layer-right", text: "Rechter laag: kaart of foto", side: "below" },
+  { target: "#mode-sync, #mode-compare", text: "Tijd schuiven of jaren vergelijken", side: "below", union: true },
+  { target: "#share", text: "Link kopiëren", side: "below" },
+  { target: "#export", text: "Film of zip maken", side: "below" },
+  { target: "#settings-open", text: "Instellingen", side: "below" },
+  { target: "#splitbar .kind-button", text: "Laag wijzigen", side: "above", row: "bottom" },
+  { target: "#split-handle", text: "Kiezen tussen linker laag en rechter laag", side: "above", row: "bottom" },
+  { target: ".yearbar .kind-button", text: "Laag wijzigen", side: "left", union: true, row: "bottom" },
+  {
+    target: ".yearbar .track",
+    text: "Met de schuifjes op de jaarbalken kies je het jaar voor elke laag. Gekleurd is een nieuw beeld, grijs hetzelfde beeld als ervoor, gestreept geen beeld. De pijltjestoetsen springen naar het volgende nieuwe beeld.",
+    side: "above",
+    union: true,
+    wide: true,
+  },
+  { target: "#play", text: "Afspelen", side: "right", row: "bottom" },
+];
+
+function unionRect(elements) {
+  const rects = elements.map((el) => el.getBoundingClientRect());
+  const left = Math.min(...rects.map((r) => r.left));
+  const top = Math.min(...rects.map((r) => r.top));
+  const right = Math.max(...rects.map((r) => r.right));
+  const bottom = Math.max(...rects.map((r) => r.bottom));
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+function helpPiece(className, box) {
+  const el = document.createElement("div");
+  el.className = className;
+  for (const [key, value] of Object.entries(box)) el.style[key] = `${Math.round(value)}px`;
+  helpTips.append(el);
+  return el;
+}
+
+function boxesOverlap(a, b, gap = 8) {
+  return a.left < b.right + gap && a.right > b.left - gap && a.top < b.bottom + gap && a.bottom > b.top - gap;
+}
+
+function layoutHelpTips() {
+  helpTips.replaceChildren();
+  if (!helpDialog.open) return;
+  const cardEl = helpDialog.querySelector(".help-card");
+  const vw = helpDialog.clientWidth;
+  const formBottom = document.querySelector("form").getBoundingClientRect().bottom;
+  const tipGap = 22;
+  const gapTop = formBottom + tipGap;
+  cardEl.style.maxHeight = "";
+  cardEl.style.top = "";
+  cardEl.style.transform = "";
+  const cardRect = cardEl.getBoundingClientRect();
+  const card = { left: cardRect.left, top: cardRect.top, right: cardRect.right, bottom: cardRect.bottom };
+  const obstacles = [card];
+  const bands = [];
+  const items = [];
+  for (const tip of HELP_TIPS) {
+    const shown = [...document.querySelectorAll(tip.target)].filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    });
+    const groups = tip.union ? (shown.length ? [shown] : []) : shown.map((el) => [el]);
+    for (const group of groups) items.push({ ...tip, rect: unionRect(group) });
+  }
+  const addStem = (x, y, w, h) => {
+    if (w < 1 || h < 1) return;
+    const stem = { left: x, top: y, right: x + w, bottom: y + h };
+    const hit = obstacles.find((other) => boxesOverlap(stem, other, 0));
+    if (!hit) {
+      helpPiece("help-stem", { left: x, top: y, width: w, height: h });
+      return;
+    }
+    if (h <= 4) {
+      if (stem.left < hit.left) addStem(stem.left, y, Math.min(stem.right, hit.left) - stem.left, h);
+      if (stem.right > hit.right) addStem(Math.max(stem.left, hit.right), y, stem.right - Math.max(stem.left, hit.right), h);
+    } else {
+      if (stem.top < hit.top) addStem(x, stem.top, w, Math.min(stem.bottom, hit.top) - stem.top);
+      if (stem.bottom > hit.bottom) addStem(x, Math.max(stem.top, hit.bottom), w, stem.bottom - Math.max(stem.top, hit.bottom));
+    }
+  };
+  const connect = (entry, box) => {
+    const rect = entry.item.rect;
+    const targetX = rect.left + rect.width / 2;
+    const targetY = rect.top + rect.height / 2;
+    const labelX = (box.left + box.right) / 2;
+    const labelY = (box.top + box.bottom) / 2;
+    const beside = Math.abs(targetX - labelX) > Math.abs(targetY - labelY)
+      && box.bottom > rect.top && box.top < rect.bottom;
+    if (beside) {
+      const y = Math.min(box.bottom - 2, Math.max(box.top + 2, targetY));
+      const from = targetX > labelX ? box.right : box.left;
+      const to = targetX > labelX ? rect.left : rect.right;
+      addStem(Math.min(from, to), y - 1, Math.abs(to - from), 2);
+      return;
+    }
+    const yLabel = targetY >= labelY ? box.bottom : box.top;
+    const yTarget = targetY >= labelY ? rect.top - 3 : rect.bottom + 3;
+    if (Math.abs(labelX - targetX) < 18) {
+      addStem(targetX - 1, Math.min(yLabel, yTarget), 2, Math.abs(yTarget - yLabel));
+      return;
+    }
+    addStem(Math.min(labelX, targetX), yLabel - 1, Math.abs(targetX - labelX), 2);
+    addStem(targetX - 1, Math.min(yLabel, yTarget), 2, Math.abs(yTarget - yLabel));
+  };
+  const alignRow = (row, rowTop) => {
+    const boxes = row.map((entry) => {
+      const cx = entry.item.rect.left + entry.item.rect.width / 2;
+      const ideal = Math.min(vw - entry.w - 8, Math.max(8, cx - entry.w / 2));
+      return { ...entry, cx, ideal, left: ideal };
+    }).sort((a, b) => a.cx - b.cx);
+    for (let i = 1; i < boxes.length; i += 1) {
+      const minLeft = boxes[i - 1].left + boxes[i - 1].w + 8;
+      if (boxes[i].left < minLeft) boxes[i].left = minLeft;
+    }
+    const overflow = boxes.length ? boxes.at(-1).left + boxes.at(-1).w - (vw - 8) : 0;
+    if (overflow > 0) for (const box of boxes) box.left -= overflow;
+    for (const pin of boxes.filter((box) => box.item.pin)) {
+      pin.left = pin.ideal;
+      const index = boxes.indexOf(pin);
+      for (let i = index - 1; i >= 0; i -= 1) {
+        const maxLeft = boxes[i + 1].left - 8 - boxes[i].w;
+        if (boxes[i].item.pin || boxes[i].left <= maxLeft) continue;
+        boxes[i].left = maxLeft;
+      }
+      for (let i = index + 1; i < boxes.length; i += 1) {
+        const minLeft = boxes[i - 1].left + boxes[i - 1].w + 8;
+        if (boxes[i].item.pin) break;
+        if (boxes[i].left < minLeft) boxes[i].left = minLeft;
+      }
+    }
+    for (const box of boxes) box.dy = 0;
+    const stemOf = (box) => {
+      const labelX = box.left + box.w / 2;
+      const targetX = box.item.rect.left + box.item.rect.width / 2;
+      const labelY = rowTop + box.h / 2;
+      const targetY = box.item.rect.top + box.item.rect.height / 2;
+      return {
+        x1: Math.min(labelX, targetX),
+        x2: Math.max(labelX, targetX),
+        targetX,
+        yEdge: targetY >= labelY ? rowTop + box.h : rowTop,
+        down: targetY < labelY,
+      };
+    };
+    const coversStem = (box, stem) => {
+      if (stem.yEdge < rowTop - 1 || stem.yEdge > rowTop + box.h + 1) return false;
+      const right = box.left + box.w;
+      const onDrop = box.left < stem.targetX && right > stem.targetX;
+      const onRun = box.left < stem.x2 - 8 && right > stem.x1 + 8;
+      return onDrop || onRun;
+    };
+    const covered = [];
+    for (const owner of boxes) {
+      if (owner.item.wide) continue;
+      const stem = stemOf(owner);
+      for (const other of boxes) {
+        if (other === owner || other.item.pin || other.item.wide) continue;
+        if (coversStem(other, stem)) covered.push({ other, owner, down: stem.down });
+      }
+    }
+    for (const { other, owner, down } of covered) {
+      const mutual = covered.some((pair) => pair.other === owner && pair.owner === other);
+      if (mutual && other.w > owner.w) continue;
+      other.dy = down ? 14 : -14;
+    }
+    for (const box of boxes) {
+      const top = rowTop + box.dy;
+      const placed = { left: box.left, top, right: box.left + box.w, bottom: top + box.h };
+      if (box.left < 4 || placed.right > vw - 4 || boxesOverlap(placed, card, 4)) {
+        box.label.remove();
+        continue;
+      }
+      box.label.style.left = `${Math.round(box.left)}px`;
+      box.label.style.top = `${Math.round(top)}px`;
+      obstacles.push(placed);
+      connect(box, placed);
+    }
+  };
+  const packAgainst = (entries, edge, grow, limit) => {
+    let index = 0;
+    let cursor = edge;
+    const fits = (rowTop, rowH) => (grow < 0 ? rowTop >= limit - 2 : rowTop + rowH <= limit + 2);
+    while (index < entries.length) {
+      if (entries[index].item.wide) {
+        const entry = entries[index];
+        index += 1;
+        const rowTop = grow < 0 ? cursor - entry.h : cursor;
+        if (!fits(rowTop, entry.h)) {
+          entry.label.remove();
+          continue;
+        }
+        alignRow([entry], rowTop);
+        cursor = grow < 0 ? rowTop - 4 : rowTop + entry.h + 4;
+        continue;
+      }
+      const row = [];
+      let used = 8;
+      let rowH = 0;
+      while (index < entries.length && !entries[index].item.wide) {
+        const entry = entries[index];
+        if (row.length && used + entry.w > vw - 8) break;
+        row.push(entry);
+        rowH = Math.max(rowH, entry.h);
+        used += entry.w + 8;
+        index += 1;
+      }
+      const rowTop = grow < 0 ? cursor - rowH : cursor;
+      if (!fits(rowTop, rowH)) {
+        for (const entry of row) entry.label.remove();
+        for (let rest = index; rest < entries.length; rest += 1) entries[rest].label.remove();
+        return;
+      }
+      alignRow(row, rowTop);
+      cursor = grow < 0 ? rowTop - 4 : rowTop + rowH + 4;
+    }
+  };
+  const measured = items.map((item) => {
+    helpPiece("help-ring", {
+      left: item.rect.left - 4,
+      top: item.rect.top - 4,
+      width: item.rect.width + 8,
+      height: item.rect.height + 8,
+    });
+    const label = document.createElement("div");
+    label.className = item.wide ? "help-tip wide" : "help-tip";
+    label.textContent = item.text;
+    if (item.wide) label.style.maxWidth = `${Math.round(Math.min(item.rect.width, vw - 24))}px`;
+    helpTips.append(label);
+    return { item, label, w: label.offsetWidth, h: label.offsetHeight };
+  });
+  const upper = measured
+    .filter((entry) => entry.item.side !== "left" && entry.item.side !== "right" && entry.item.rect.top < card.top)
+    .sort((a, b) => (a.item.wide ? 1 : 0) - (b.item.wide ? 1 : 0) || a.item.rect.left - b.item.rect.left);
+  const lower = measured
+    .filter((entry) => !upper.includes(entry))
+    .sort((a, b) => (a.item.wide ? 1 : 0) - (b.item.wide ? 1 : 0) || a.item.rect.left - b.item.rect.left);
+  packAgainst(upper, gapTop, 1, card.top - 8);
+  const bottomRow = lower.filter((entry) => entry.item.row === "bottom");
+  const beside = lower.filter((entry) => entry.item.row !== "bottom");
+  if (bottomRow.length) {
+    const rowH = Math.max(...bottomRow.map((entry) => entry.h));
+    const anchor = Math.min(...bottomRow.map((entry) => entry.item.rect.top));
+    let rowTop = anchor - tipGap - rowH;
+    if (rowTop < card.bottom + 8) rowTop = card.bottom + 8;
+    alignRow(bottomRow, rowTop);
+    bands.push({ left: 0, top: rowTop, right: vw, bottom: rowTop + rowH });
+  }
+  placeBesideControls(beside);
+
+  function placeBesideControls(entries) {
+  const vw = helpDialog.clientWidth;
+  const controls = ["#splitbar", "#yearbars", "#play"].flatMap((sel) => {
+    const el = document.querySelector(sel);
+    if (!el || el.hidden) return [];
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return [];
+    return [{ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }];
+  });
+  const taken = [];
+  const blocked = (box) => [...obstacles, ...bands, ...controls, ...taken].some((other) => boxesOverlap(box, other, 4));
+  const preferred = (entry) => {
+    const rect = entry.item.rect;
+    const gap = 8;
+    let left = rect.left + rect.width / 2 - entry.w / 2;
+    let top = rect.top - gap - entry.h;
+    const roomLeft = rect.left - gap - entry.w >= 8;
+    const roomRight = rect.right + gap + entry.w <= vw - 8;
+    if ((entry.item.side === "left" && roomLeft) || (entry.item.side === "right" && !roomRight && roomLeft)) {
+      left = rect.left - gap - entry.w;
+      top = rect.top + rect.height / 2 - entry.h / 2;
+    } else if (entry.item.side === "right" && roomRight) {
+      left = rect.right + gap;
+      top = rect.top + rect.height / 2 - entry.h / 2;
+    }
+    left = Math.min(vw - entry.w - 8, Math.max(8, left));
+    return { left, top, right: left + entry.w, bottom: top + entry.h };
+  };
+  const liftClear = (box) => {
+    for (let guard = 0; guard < 12; guard += 1) {
+      const hits = [...obstacles, ...bands, ...controls, ...taken].filter((other) => boxesOverlap(box, other, 4));
+      if (!hits.length) return box;
+      const nextTop = Math.min(...hits.map((hit) => hit.top)) - 6 - (box.bottom - box.top);
+      if (nextTop < 4) return null;
+      box = { left: box.left, top: nextTop, right: box.right, bottom: nextTop + (box.bottom - box.top) };
+    }
+    return null;
+  };
+  const commit = (entry, box) => {
+    if (!box || box.left < 4 || box.right > vw - 4 || blocked(box)) {
+      entry.label.remove();
+      return;
+    }
+    entry.label.style.left = `${Math.round(box.left)}px`;
+    entry.label.style.top = `${Math.round(box.top)}px`;
+    taken.push(box);
+    obstacles.push(box);
+    connect(entry, box);
+  };
+  const shorts = entries.filter((entry) => !entry.item.wide)
+    .sort((a, b) => a.w - b.w || a.item.rect.left - b.item.rect.left);
+  for (const entry of shorts) commit(entry, liftClear(preferred(entry)));
+  for (const entry of entries.filter((item) => item.item.wide)) commit(entry, liftClear(preferred(entry)));
+  }
+}
+
 function openHelp(record) {
   if (typeof helpDialog.showModal === "function" && !helpDialog.open) helpDialog.showModal();
   else helpDialog.setAttribute("open", "");
+  layoutHelpTips();
   if (record) markHelpShown();
-}
-
-function openShareHint() {
-  if (helpDialog.open) helpDialog.close();
-  if (typeof shareHint.showModal === "function" && !shareHint.open) shareHint.showModal();
-  else shareHint.setAttribute("open", "");
 }
 
 helpOpen.addEventListener("click", () => openHelp(false));
@@ -221,12 +549,26 @@ helpClose.addEventListener("click", () => helpDialog.close());
 helpDialog.addEventListener("click", (event) => {
   if (event.target === helpDialog) helpDialog.close();
 });
-shareHintClose.addEventListener("click", () => shareHint.close());
-shareHint.addEventListener("click", (event) => {
-  if (event.target === shareHint) shareHint.close();
-});
-if (readShareSetup()) openShareHint();
-else if (helpIsDue()) openHelp(true);
+const SHARE_KEYS = ["x", "y", "z", "jaar", "jaar2", "van", "tot", "sat", "lijn", "split", "tempo", "plaats", "modus", "links", "rechts", "overgang"];
+const SHARE_KINDS = { kaart: "map", foto: "sat" };
+
+if (readShareSetup() || helpIsDue()) openHelp(true);
+
+let shareResultTimer = 0;
+
+function showShareResult(copied) {
+  window.clearTimeout(shareResultTimer);
+  shareButton.classList.toggle("copied", copied);
+  shareButton.classList.toggle("failed", !copied);
+  const label = copied ? "Gekopieerd" : "Mislukt";
+  shareButton.title = label;
+  shareButton.setAttribute("aria-label", label);
+  shareResultTimer = window.setTimeout(() => {
+    shareButton.classList.remove("copied", "failed");
+    shareButton.title = "Link kopiëren";
+    shareButton.setAttribute("aria-label", "Link kopiëren");
+  }, 1600);
+}
 
 shareButton.addEventListener("click", () => {
   copyShareLink();
@@ -236,6 +578,63 @@ holdInput.addEventListener("change", () => {
   if (!persistReady) return;
   session.hold = holdInput.value;
   rememberSettings();
+});
+
+function normalizeBlend(mode) {
+  return BLENDS.has(mode) ? mode : "x";
+}
+
+function syncBlendControl() {
+  blendMode = normalizeBlend(session.blend);
+  session.blend = blendMode;
+  blendInput.value = blendMode;
+}
+
+const cacheStatsEl = document.querySelector("#cache-stats");
+
+function formatBytes(bytes) {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2).replace(/\.?0+$/, "").replace(".", ",")} GB`;
+  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  return `${Math.round(bytes / 1024)} kB`;
+}
+
+async function renderCacheStats() {
+  const tiles = [...tileIndex.values()].filter((entry) => entry.s === STORED).length;
+  const rows = [
+    ["Tegels", tiles.toLocaleString("nl-NL")],
+    ["Tegelopslag", `${formatBytes(storedBytes)} van ${formatBytes(TILE_BUDGET)}`],
+    ["In geheugen", `${bitmaps.size} van ${BITMAP_LIMIT} beelden`],
+  ];
+  const draw = () => cacheStatsEl.replaceChildren(...rows.flatMap(([name, value]) => {
+    const dt = document.createElement("dt");
+    dt.textContent = name;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    return [dt, dd];
+  }));
+  draw();
+  try {
+    const { usage, quota } = await navigator.storage.estimate();
+    rows.push(["Browser totaal", `${formatBytes(usage)} van ${formatBytes(quota)}`]);
+    draw();
+  } catch {
+    // Without an estimate the tile numbers are enough.
+  }
+}
+
+settingsOpen.addEventListener("click", () => {
+  if (!settingsDialog.open) settingsDialog.showModal();
+  renderCacheStats();
+});
+settingsClose.addEventListener("click", () => settingsDialog.close());
+settingsDialog.addEventListener("click", (event) => {
+  if (event.target === settingsDialog) settingsDialog.close();
+});
+blendInput.addEventListener("change", () => {
+  blendMode = normalizeBlend(blendInput.value);
+  session.blend = blendMode;
+  rememberSettings();
+  if (!playing && !recording && !packing && !presenting) paintLive();
 });
 
 for (const control of [fromInput, toInput]) {
@@ -351,6 +750,13 @@ canvas.addEventListener("wheel", (event) => {
   zoomAt(event);
 }, { passive: false });
 
+function setPlayButton(running) {
+  playButton.classList.toggle("playing", running);
+  const label = running ? "Pauzeren" : "Afspelen";
+  playButton.setAttribute("aria-label", label);
+  playButton.title = label;
+}
+
 playButton.addEventListener("click", () => {
   if (playing) cancelPlayback();
   else startPlayback();
@@ -360,15 +766,27 @@ bindYearBars();
 
 const RECORD_HINT = "De film wordt in gewone snelheid opgenomen; dit duurt zo lang als de film zelf.";
 
+exportButton.addEventListener("click", () => {
+  if (!exportMenu.open) exportMenu.showModal();
+});
+
+exportMenuClose.addEventListener("click", () => exportMenu.close());
+exportMenu.addEventListener("click", (event) => {
+  if (event.target === exportMenu) exportMenu.close();
+});
+
 downloadButton.addEventListener("click", () => {
+  exportMenu.close();
   runExport("WebM maken", RECORD_HINT, recordMovie);
 });
 
 mp4Button.addEventListener("click", () => {
+  exportMenu.close();
   recordMp4();
 });
 
 zipButton.addEventListener("click", () => {
+  exportMenu.close();
   runExport("Zip maken", "", downloadZip);
 });
 
@@ -383,7 +801,7 @@ forgetButton.addEventListener("click", async (event) => {
   event.stopPropagation();
   if (recording || packing) return;
   const removed = await clearSavedTiles();
-  if (helpDialog.open) helpDialog.close();
+  renderCacheStats();
   paintLive();
   scheduleEngine();
   setStatus(removed
@@ -397,7 +815,7 @@ document.addEventListener("pointerdown", () => {
 
 document.addEventListener("keydown", (event) => {
   userGesture = true;
-  if (helpDialog.open || shareHint.open || exportDialog.open) return;
+  if (helpDialog.open || exportDialog.open || exportMenu.open || placeDialog.open || settingsDialog.open) return;
   const typing = event.target instanceof Element
     && event.target.matches("input:not([type=checkbox]):not([type=range]), select, textarea");
   if (typing) return;
@@ -466,6 +884,7 @@ function onViewportChange() {
   fitPage();
   layoutWipeBars();
   if (frames.length) scheduleBars();
+  layoutHelpTips();
 }
 
 fitPage();
@@ -507,7 +926,6 @@ function localizeStatus(text) {
 function setStatus(text) {
   const line = localizeStatus(text);
   statusEl.textContent = line;
-  loadStatus.textContent = line;
   if (exportDialog.open && !exportCancelled) exportText.textContent = line;
 }
 
@@ -840,47 +1258,63 @@ function noteParts(notes) {
     .map(([kind, year]) => ({ kind, text: String(year) }));
 }
 
-function stamp(label, context = offCtx, line, notes, { box = "left", credit = "right" } = {}) {
+function stamp(label, context = offCtx, line, notes, {
+  box = "left", credit = "right", yearBox = true, creditLine = true,
+} = {}) {
   context.save();
-  const parts = noteParts(notes);
-  const padX = 18;
-  context.font = "600 52px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-  const yearW = context.measureText(String(label)).width;
-  context.font = "600 26px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-  for (const part of parts) part.width = context.measureText(part.text).width;
-  const noteW = parts.reduce((sum, part) => sum + NOTE_ICON + NOTE_ICON_GAP + part.width, 0)
-    + NOTE_PART_GAP * Math.max(0, parts.length - 1);
-  const textW = Math.max(yearW, noteW);
-  const boxH = parts.length ? 112 : 72;
-  const boxW = textW + padX * 2;
-  const boxX = box === "right" ? WIDTH - 28 - boxW : 28;
-  context.fillStyle = "rgba(243, 236, 223, 0.94)";
-  context.fillRect(boxX, 28, boxW, boxH);
-  context.fillStyle = "#1c1916";
-  context.textBaseline = "middle";
-  context.font = "600 52px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-  const middle = boxX + padX + textW / 2;
-  context.fillText(String(label), middle - yearW / 2, 28 + 36);
-  if (parts.length) {
-    context.font = "600 26px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-    context.fillStyle = "rgba(28, 25, 22, 0.78)";
-    let x = middle - noteW / 2;
-    const y = 28 + 84;
-    for (const part of parts) {
-      drawNoteIcon(context, part.kind, x, y);
-      x += NOTE_ICON + NOTE_ICON_GAP;
-      context.fillText(part.text, x, y + 1);
-      x += part.width + NOTE_PART_GAP;
+  if (yearBox) {
+    context.save();
+    const scale = 0.75;
+    if (box === "right") {
+      context.translate(WIDTH, 0);
+      context.scale(scale, scale);
+      context.translate(-WIDTH, 0);
+    } else {
+      context.scale(scale, scale);
     }
+    const parts = noteParts(notes);
+    const padX = 18;
+    context.font = "600 52px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
+    const yearW = context.measureText(String(label)).width;
+    context.font = "600 26px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
+    for (const part of parts) part.width = context.measureText(part.text).width;
+    const noteW = parts.reduce((sum, part) => sum + NOTE_ICON + NOTE_ICON_GAP + part.width, 0)
+      + NOTE_PART_GAP * Math.max(0, parts.length - 1);
+    const textW = Math.max(yearW, noteW);
+    const boxH = parts.length ? 112 : 72;
+    const boxW = textW + padX * 2;
+    const boxX = box === "right" ? WIDTH - 28 - boxW : 28;
+    context.fillStyle = "rgba(243, 236, 223, 0.94)";
+    context.fillRect(boxX, 28, boxW, boxH);
+    context.fillStyle = "#1c1916";
+    context.textBaseline = "middle";
+    context.font = "600 52px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
+    const middle = boxX + padX + textW / 2;
+    context.fillText(String(label), middle - yearW / 2, 28 + 36);
+    if (parts.length) {
+      context.font = "600 26px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
+      context.fillStyle = "rgba(28, 25, 22, 0.78)";
+      let x = middle - noteW / 2;
+      const y = 28 + 84;
+      for (const part of parts) {
+        drawNoteIcon(context, part.kind, x, y);
+        x += NOTE_ICON + NOTE_ICON_GAP;
+        context.fillText(part.text, x, y + 1);
+        x += part.width + NOTE_PART_GAP;
+      }
+    }
+    context.restore();
   }
-
-  context.font = "16px 'Segoe UI', 'Helvetica Neue', sans-serif";
-  context.fillStyle = "rgba(243, 236, 223, 0.95)";
-  context.textAlign = credit;
-  context.shadowColor = "rgba(28, 25, 22, 0.55)";
-  context.shadowBlur = 6;
-  const text = line || (frameSource === "satellite" ? "Beeldmateriaal.nl / Kadaster" : "Kadaster / Topotijdreis");
-  context.fillText(text, credit === "right" ? WIDTH - 28 : 28, HEIGHT - 26);
+  if (creditLine) {
+    context.font = "16px 'Segoe UI', 'Helvetica Neue', sans-serif";
+    context.fillStyle = "rgba(243, 236, 223, 0.95)";
+    context.textAlign = credit;
+    context.textBaseline = "alphabetic";
+    context.shadowColor = "rgba(28, 25, 22, 0.55)";
+    context.shadowBlur = 6;
+    const text = line || (frameSource === "satellite" ? "Beeldmateriaal.nl / Kadaster" : "Kadaster / Topotijdreis");
+    context.fillText(text, credit === "right" ? WIDTH - 28 : 28, HEIGHT - 26);
+  }
   context.restore();
 }
 
@@ -942,53 +1376,7 @@ function sampleTiles(tiles, focus) {
   return sample.length ? sample : [tiles[0]];
 }
 
-let barSpan = null;
-
-function segmentStateLabel(state) {
-  if (state === "red") return "ophalen";
-  if (state === "green") return "opgeslagen";
-  if (state === "wait") return "wachten";
-  return "ongewijzigd";
-}
-
-function segmentTitle(detail, state) {
-  return `${detail} · ${segmentStateLabel(state)}`;
-}
-
-function paintPlan(bar, plan, name, editions = null) {
-  bar.hidden = false;
-  const source = editions || plan.map((item) => item.edition).filter(Boolean);
-  const segments = [];
-  if (barSpan) {
-    for (let year = barSpan.start; year <= barSpan.end; year += 1) {
-      const edition = sheetForYear(source, year);
-      const item = edition && plan.find((entry) => entry.edition?.name === edition.name);
-      const state = item ? item.state : "grey";
-      const detail = edition ? `${year} · ${edition.label}` : `${year} · geen beeld`;
-      segments.push({ state, title: segmentTitle(detail, state) });
-    }
-  }
-  if (!segments.length) {
-    const items = plan.length ? plan : [{ edition: { label: "Geen bladen" }, state: "grey" }];
-    segments.push(...items.map((item) => ({
-      state: item.state,
-      title: segmentTitle(item.edition.label, item.state),
-    })));
-  }
-  bar.replaceChildren(...segments.map((item) => {
-    const segment = document.createElement("i");
-    segment.className = item.state;
-    segment.title = item.title;
-    return segment;
-  }));
-  const grey = plan.filter((item) => item.state === "grey").length;
-  const red = plan.filter((item) => item.state === "red").length;
-  const green = plan.filter((item) => item.state === "green").length;
-  const done = green + grey;
-  bar.setAttribute("aria-label", `${name}: ${green} opgeslagen, ${red} nog ophalen, ${grey} ongewijzigd`);
-  const count = bar === mapBar ? mapCount : satCount;
-  count.textContent = plan.length ? `${done} van ${plan.length}` : "";
-}
+let loadPlans = null;
 
 let shownFrame = 0;
 let hasPresented = false;
@@ -997,35 +1385,15 @@ function drawMissing(context, kind) {
   context.save();
   context.fillStyle = "#0c0c0c";
   context.fillRect(0, 0, WIDTH, HEIGHT);
-  context.translate(WIDTH / 2, HEIGHT / 2);
-  context.strokeStyle = "#f3ecdf";
-  context.lineWidth = 8;
-  context.lineJoin = "round";
-  context.lineCap = "round";
-  const box = 86;
-  context.strokeRect(-box, -box * 0.68, box * 2, box * 1.36);
-  context.beginPath();
-  if (kind === "map") {
-    context.moveTo(-box * 0.75, box * 0.05);
-    context.lineTo(-box * 0.2, -box * 0.28);
-    context.lineTo(box * 0.15, box * 0.12);
-    context.lineTo(box * 0.75, -box * 0.22);
-  } else {
-    context.moveTo(-box * 0.7, box * 0.32);
-    context.lineTo(-box * 0.15, -box * 0.12);
-    context.lineTo(box * 0.2, box * 0.18);
-    context.lineTo(box * 0.72, -box * 0.28);
-  }
-  context.stroke();
-  if (kind !== "map") {
-    context.beginPath();
-    context.arc(box * 0.42, -box * 0.32, 12, 0, Math.PI * 2);
-    context.stroke();
-  }
-  context.beginPath();
-  context.moveTo(-box * 1.2, -box * 0.9);
-  context.lineTo(box * 1.2, box * 0.9);
-  context.stroke();
+  context.fillStyle = "#f3ecdf";
+  context.font = "600 42px 'Segoe UI', 'Helvetica Neue', sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(
+    kind === "map" ? "Geen kaart beschikbaar" : "Geen beeldmateriaal beschikbaar",
+    WIDTH / 2,
+    HEIGHT / 2,
+  );
   context.restore();
 }
 
@@ -1068,20 +1436,25 @@ function drawWipeBetween(axis, sign, t) {
 
 function drawLayerSplitTo(context, split, activeSat = false) {
   const t = Math.min(1, Math.max(0, split));
-  const edge = t * WIDTH;
   const active = activeSat ? satBlendCanvas : mapBlendCanvas;
   const other = activeSat ? mapBlendCanvas : satBlendCanvas;
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.globalAlpha = 1;
   context.drawImage(other, 0, 0);
-  if (edge > 0) {
+  if (t > 0) {
     context.save();
-    context.beginPath();
-    context.rect(0, 0, edge, HEIGHT);
-    context.clip();
+    if (blendMode === "fade") {
+      context.globalAlpha = t;
+    } else {
+      const edge = (1 - t) * WIDTH;
+      context.beginPath();
+      context.rect(edge, 0, WIDTH - edge, HEIGHT);
+      context.clip();
+    }
     context.drawImage(active, 0, 0);
     context.restore();
   }
+  overlayYearBoxes(context, t);
 }
 
 function drawLayerSplit(split, activeSat) {
@@ -1114,34 +1487,60 @@ async function runWipeTransition(myShow, token, ms, axis, sign, onFrame) {
 }
 
 function splitFromClientX(clientX) {
-  const rect = canvas.getBoundingClientRect();
+  const rect = layerBar.getBoundingClientRect();
   if (!rect.width) return layerSplit;
-  return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  return 1 - fraction;
+}
+
+function paneImageYear(side) {
+  if (!frames.length || !view) return null;
+  const index = compareMode ? yearIndex(panes[side].year) : frameIndex;
+  const label = Number(frames[index]?.label);
+  if (!Number.isFinite(label)) return null;
+  const plan = sidePlan(panes[side].kind, label);
+  if (!plan.edition || plan.empty) return null;
+  return plan.shown?.start ?? plan.edition.start ?? null;
 }
 
 function layoutWipeBars() {
   if (!wipeBars || wipeBars.hidden) return;
-  const rect = canvas.getBoundingClientRect();
-  const box = stageWrap.getBoundingClientRect();
-  const scale = pageScale || 1;
-  const left = (rect.left - box.left) / scale;
-  const top = (rect.top - box.top) / scale;
-  const width = rect.width / scale;
-  const height = rect.height / scale;
-  const barW = 28;
-  const split = layerDrag ? layerDrag.split : layerSplit;
-  const splitLeft = left + split * width - barW / 2;
-  layerBar.style.left = `${Math.max(left, Math.min(left + width - barW, splitLeft))}px`;
-  layerBar.style.top = `${top}px`;
-  layerBar.style.height = `${height}px`;
-  layerBar.style.width = `${barW}px`;
+  const width = canvas.clientWidth;
+  if (width) wipeBars.style.width = `${width}px`;
   updateWipeThumbs();
 }
 
 function updateWipeThumbs() {
   if (!frames.length || wipeBars.hidden) return;
   const split = layerDrag ? layerDrag.split : layerSplit;
-  layerBar.setAttribute("aria-valuenow", String(Math.round(split * 100) / 100));
+  const handle = 1 - split;
+  const kindColor = (kind) => (kind === "sat" ? "#4f9a92" : "var(--red)");
+  splitZones.replaceChildren(...[0, 1].map((side) => {
+    const piece = document.createElement("i");
+    piece.className = "have";
+    piece.style.background = kindColor(panes[side].kind);
+    piece.style.left = side ? "0" : `${handle * 100}%`;
+    piece.style.width = `${(side ? handle : split) * 100}%`;
+    return piece;
+  }));
+  splitHandle.style.left = `${handle * 100}%`;
+  splitKinds.forEach((mark, side) => {
+    const kind = panes[side].kind;
+    const other = kind === "map" ? "sat" : "map";
+    mark.classList.toggle("sat", kind === "sat");
+    if (mark.dataset.kind !== kind) {
+      mark.innerHTML = KIND_ICONS[kind];
+      mark.dataset.kind = kind;
+    }
+    mark.title = `${side ? "Rechts" : "Links"} van de lijn: ${KIND_NAMES[kind]}. Klik voor ${KIND_NAMES[other]}.`;
+    mark.setAttribute("aria-label", mark.title);
+  });
+  splitYears.forEach((element, side) => {
+    const year = paneImageYear(side);
+    element.textContent = year == null ? "—" : String(year);
+  });
+  layerBar.setAttribute("aria-valuenow", String(Math.round(handle * 100) / 100));
+  layerBar.setAttribute("aria-valuetext", `${splitYears[0].textContent} en ${splitYears[1].textContent}`);
 }
 
 function syncWipeBars() {
@@ -1166,12 +1565,12 @@ function bindWipeBars() {
     if (wipeBars.hidden || recording || packing) return;
     event.preventDefault();
     cancelPlayback();
-    layerBar.setPointerCapture(event.pointerId);
     layerDrag = {
       id: event.pointerId,
       split: splitFromClientX(event.clientX),
       activeSat: false,
     };
+    try { layerBar.setPointerCapture(event.pointerId); } catch { /* The move listener still tracks the pointer. */ }
     renderYear(frameIndex);
     drawLayerSplit(layerDrag.split, layerDrag.activeSat);
     layoutWipeBars();
@@ -1186,7 +1585,7 @@ function bindWipeBars() {
 
   const endLayer = (event) => {
     if (!layerDrag || event.pointerId !== layerDrag.id) return;
-    layerBar.releasePointerCapture(event.pointerId);
+    try { layerBar.releasePointerCapture(event.pointerId); } catch { /* Capture was already released. */ }
     finishLayerDrag();
   };
   layerBar.addEventListener("pointerup", endLayer);
@@ -1257,7 +1656,7 @@ function startPlayback() {
   if (!frames.length || recording || packing) return;
   const token = ++playToken;
   playing = true;
-  playButton.textContent = "Pauzeren";
+  setPlayButton(true);
   if (compareMode) {
     syncWipeBars();
     runCrossfade(token, { intro: 400 });
@@ -1293,6 +1692,7 @@ function drawPaneMix(mix) {
     ctx.drawImage(satBlendCanvas, 0, 0);
     ctx.globalAlpha = 1;
   }
+  overlayYearBoxes(ctx, 1 - mix);
 }
 
 async function runCrossfade(token, { intro = 0, total = Infinity, onFrame } = {}) {
@@ -1342,7 +1742,7 @@ async function runPlayback(token, start) {
   }
   if (token === playToken) {
     playing = false;
-    playButton.textContent = "Afspelen";
+    setPlayButton(false);
   }
 }
 
@@ -1350,7 +1750,7 @@ function cancelPlayback() {
   const wasPlaying = playing;
   playToken += 1;
   playing = false;
-  playButton.textContent = "Afspelen";
+  setPlayButton(false);
   if (cancelWait) cancelWait();
   if (wasPlaying && compareMode) {
     syncWipeBars();
@@ -1453,7 +1853,7 @@ async function recordStream(mimeType, extension) {
   } finally {
     stream.getTracks().forEach((track) => track.stop());
     playing = false;
-    playButton.textContent = "Afspelen";
+    setPlayButton(false);
     recording = false;
     syncControls();
     requestRepaint();
@@ -1467,7 +1867,7 @@ function movieBaseName() {
   const mode = compareMode
     ? `vergelijk-${panes.map((pane) => `${KIND_NAMES[pane.kind]}${pane.year}`).join("-")}`
     : usingSatellite() ? "satelliet" : "kaart";
-  return `tijdreis-${mode}-${x}-${y}`;
+  return `tijdmachine-${mode}-${x}-${y}`;
 }
 
 function movieName() {
@@ -1655,7 +2055,7 @@ async function recordEncodedMp4(config) {
   } finally {
     if (encoder.state !== "closed") encoder.close();
     playing = false;
-    playButton.textContent = "Afspelen";
+    setPlayButton(false);
     recording = false;
     syncControls();
     requestRepaint();
@@ -1879,7 +2279,7 @@ function viewerPage(movie) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tijdreis</title>
+  <title>Tijdmachine</title>
   <style>
     :root { color-scheme: dark; --ink: #1c1916; --paper: #f3ecdf; --muted: #b5a894; --red: #c4492c; }
     * { box-sizing: border-box; }
@@ -1906,7 +2306,7 @@ function viewerPage(movie) {
 <body>
   <header>
     <p class="eyebrow">Kadaster · Topotijdreis</p>
-    <h1 id="place">Tijdreis</h1>
+    <h1 id="place">Tijdmachine</h1>
   </header>
   <div class="stage-wrap" id="stage">
     <canvas id="map" width="1280" height="720"></canvas>
@@ -1961,8 +2361,8 @@ function viewerPage(movie) {
     let layerDrag = null;
     const images = {};
 
-    document.getElementById("place").textContent = MOVIE.place || "Tijdreis";
-    document.title = MOVIE.place ? "Tijdreis · " + MOVIE.place : "Tijdreis";
+    document.getElementById("place").textContent = MOVIE.place || "Tijdmachine";
+    document.title = MOVIE.place ? "Tijdmachine · " + MOVIE.place : "Tijdmachine";
     if ([...hold.options].some((option) => option.value === String(MOVIE.hold))) hold.value = String(MOVIE.hold);
     scrub.max = String(last);
     function loadImages() {
@@ -1982,35 +2382,15 @@ function viewerPage(movie) {
       context.save();
       context.fillStyle = "#0c0c0c";
       context.fillRect(0, 0, W, H);
-      context.translate(W / 2, H / 2);
-      context.strokeStyle = "#f3ecdf";
-      context.lineWidth = 8;
-      context.lineJoin = "round";
-      context.lineCap = "round";
-      const box = 86;
-      context.strokeRect(-box, -box * 0.68, box * 2, box * 1.36);
-      context.beginPath();
-      if (kind === "map") {
-        context.moveTo(-box * 0.75, box * 0.05);
-        context.lineTo(-box * 0.2, -box * 0.28);
-        context.lineTo(box * 0.15, box * 0.12);
-        context.lineTo(box * 0.75, -box * 0.22);
-      } else {
-        context.moveTo(-box * 0.7, box * 0.32);
-        context.lineTo(-box * 0.15, -box * 0.12);
-        context.lineTo(box * 0.2, box * 0.18);
-        context.lineTo(box * 0.72, -box * 0.28);
-      }
-      context.stroke();
-      if (kind !== "map") {
-        context.beginPath();
-        context.arc(box * 0.42, -box * 0.32, 12, 0, Math.PI * 2);
-        context.stroke();
-      }
-      context.beginPath();
-      context.moveTo(-box * 1.2, -box * 0.9);
-      context.lineTo(box * 1.2, box * 0.9);
-      context.stroke();
+      context.fillStyle = "#f3ecdf";
+      context.font = "600 42px 'Segoe UI', 'Helvetica Neue', sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(
+        kind === "map" ? "Geen kaart beschikbaar" : "Geen beeldmateriaal beschikbaar",
+        W / 2,
+        H / 2,
+      );
       context.restore();
     }
 
@@ -2126,16 +2506,16 @@ function viewerPage(movie) {
 
     function drawSplit(context, splitValue) {
       const t = Math.min(1, Math.max(0, splitValue));
-      const edge = t * W;
+      const edge = (1 - t) * W;
       const active = mapBlend;
       const other = satBlend;
       context.setTransform(1, 0, 0, 1, 0, 0);
       context.globalAlpha = 1;
       context.drawImage(other, 0, 0);
-      if (edge > 0) {
+      if (edge < W) {
         context.save();
         context.beginPath();
-        context.rect(0, 0, edge, H);
+        context.rect(edge, 0, W - edge, H);
         context.clip();
         context.drawImage(active, 0, 0);
         context.restore();
@@ -2171,7 +2551,7 @@ function viewerPage(movie) {
       const left = rect.left - box.left;
       const top = rect.top - box.top;
       const barW = 28;
-      const splitLeft = left + split * rect.width - barW / 2;
+      const splitLeft = left + (1 - split) * rect.width - barW / 2;
       splitbar.style.left = Math.max(left, Math.min(left + rect.width - barW, splitLeft)) + "px";
       splitbar.style.top = top + "px";
       splitbar.style.height = rect.height + "px";
@@ -2344,7 +2724,8 @@ function viewerPage(movie) {
     function splitFrom(clientX) {
       const rect = screen.getBoundingClientRect();
       if (!rect.width) return split;
-      return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      return 1 - fraction;
     }
 
     playBtn.addEventListener("click", startPlay);
@@ -2424,7 +2805,7 @@ async function downloadZip() {
     const credit = (plan, side) => (panes[side].kind === "sat" ? satelliteCredit(plan.shown || plan.edition) : null);
     if (compareMode) {
       setStatus("Zip maken…");
-      const plans = await renderYear(frameIndex, { wait: true });
+      const plans = await renderYear(frameIndex, { wait: true, stampBoxes: true });
       movie.compare = true;
       movie.years.push(panes.map((pane) => pane.year).join(" · "));
       movie.a.push(0);
@@ -2471,7 +2852,7 @@ async function downloadZip() {
         kinds: panes.map((pane) => pane.kind),
         split: layerSplit,
         index: compareMode ? 0 : frameIndex,
-        place: placeInput.value.trim(),
+        place: placeName,
       })),
     }];
     for (let i = 0; i < blobs.length; i += 1) {
@@ -2515,11 +2896,11 @@ function yearOptionsFragment(start, end) {
   return fragment;
 }
 
-function rangeSelectOptions(first, last) {
+function rangeSelectOptions(first, last, blank) {
   const fragment = document.createDocumentFragment();
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = "—";
+  empty.textContent = blank;
   fragment.append(empty);
   fragment.append(yearOptionsFragment(first, last));
   return fragment;
@@ -2529,9 +2910,8 @@ function fillRangeSelects(editions) {
   if (!editions?.length) return;
   const first = editions[0].start;
   const last = editions.at(-1).end;
-  const options = rangeSelectOptions(first, last);
-  fromInput.replaceChildren(options.cloneNode(true));
-  toInput.replaceChildren(options);
+  fromInput.replaceChildren(rangeSelectOptions(first, last, "eerste"));
+  toInput.replaceChildren(rangeSelectOptions(first, last, "laatste"));
   const from = Number(session.from);
   const to = Number(session.to);
   fromInput.value = session.from === "" || !Number.isFinite(from)
@@ -2559,16 +2939,66 @@ function locatePlace() {
   hereToken += 1;
   const text = placeInput.value.trim();
   if (!text) return;
+  placeError.textContent = "";
   const request = ++placeRequest;
   resolvePlace(text)
     .then((place) => {
       if (request !== placeRequest) return;
+      if (placeDialog.open) placeDialog.close();
+      placeInput.value = "";
       applyLocatedPlace(place);
     })
     .catch((error) => {
       if (request !== placeRequest) return;
-      setStatus(error.message || "Plaats niet gevonden.");
+      const message = error.message || "Plaats niet gevonden.";
+      placeError.textContent = message;
+      setStatus(message);
     });
+}
+
+let placeName = "";
+let placeLookupTimer = null;
+let placeLookupToken = 0;
+
+function setPlaceName(name) {
+  placeName = name ? String(name).slice(0, 120) : "";
+  placeNameEl.textContent = placeName || "—";
+}
+
+function schedulePlaceName(delay = 700) {
+  clearTimeout(placeLookupTimer);
+  placeLookupTimer = setTimeout(lookupPlaceName, delay);
+}
+
+async function lookupPlaceName() {
+  if (!view) return;
+  const token = ++placeLookupToken;
+  const x = view.x;
+  const y = view.y;
+  try {
+    const name = await reverseCity(x, y);
+    if (token !== placeLookupToken) return;
+    if (!view || Math.round(view.x) !== Math.round(x) || Math.round(view.y) !== Math.round(y)) return;
+    if (name === placeName) return;
+    setPlaceName(name);
+    rememberSettings();
+  } catch {
+    if (token !== placeLookupToken || placeName) return;
+    setPlaceName("");
+  }
+}
+
+async function reverseCity(x, y) {
+  const url = new URL("https://api.pdok.nl/bzk/locatieserver/search/v3_1/reverse");
+  url.searchParams.set("X", String(Math.round(x)));
+  url.searchParams.set("Y", String(Math.round(y)));
+  url.searchParams.set("type", "woonplaats");
+  url.searchParams.set("rows", "1");
+  url.searchParams.set("fl", "woonplaatsnaam,weergavenaam");
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Plaats opzoeken mislukt.");
+  const doc = (await response.json()).response?.docs?.[0];
+  return doc?.woonplaatsnaam || doc?.weergavenaam || "";
 }
 
 async function resolvePlace(text) {
@@ -2750,8 +3180,6 @@ function readSettings() {
   }
 }
 
-const SHARE_KEYS = ["x", "y", "z", "jaar", "jaar2", "van", "tot", "sat", "lijn", "split", "tempo", "plaats", "modus", "links", "rechts"];
-const SHARE_KINDS = { kaart: "map", foto: "sat" };
 let openedFromShare = false;
 
 function readShareSetup() {
@@ -2781,6 +3209,7 @@ function readShareSetup() {
     split: params.has("split") ? Number(params.get("split")) : (params.has("sat") ? (params.get("sat") === "1" ? 0 : 1) : null),
     linear: false,
     hold: tempo === "400" || tempo === "800" || tempo === "1500" ? tempo : null,
+    blend: params.get("overgang") === "vervagen" ? "fade" : params.get("overgang") === "horizontaal" || params.get("overgang") === "verticaal" ? "x" : null,
     place: (params.get("plaats") || "").slice(0, 120),
     panes: {
       mode: params.get("modus") === "vergelijken" ? "vergelijken" : "samen",
@@ -2805,7 +3234,8 @@ function applyShareSetup(setup) {
     layerSplit = 0;
   }
   if (setup.hold) session.hold = setup.hold;
-  if (setup.place) placeInput.value = setup.place;
+  if (setup.blend) session.blend = normalizeBlend(setup.blend);
+  if (setup.place) setPlaceName(setup.place);
   applyPaneSetup(setup.panes);
 }
 
@@ -2829,8 +3259,8 @@ function shareSetupUrl() {
   url.searchParams.set("sat", usingSatellite() ? "1" : "0");
   url.searchParams.set("split", round(layerSplit, 3));
   if (holdInput.value) url.searchParams.set("tempo", holdInput.value);
-  const place = placeInput.value.trim();
-  if (place) url.searchParams.set("plaats", place.slice(0, 120));
+  url.searchParams.set("overgang", blendMode === "fade" ? "vervagen" : "horizontaal");
+  if (placeName) url.searchParams.set("plaats", placeName.slice(0, 120));
   return url.toString();
 }
 
@@ -2866,11 +3296,8 @@ async function copyShareLink() {
     }
     field.remove();
   }
-  shareButton.textContent = copied ? "Gekopieerd" : "Mislukt";
+  showShareResult(copied);
   setStatus(copied ? "Link gekopieerd." : "Kon de link niet kopiëren.");
-  setTimeout(() => {
-    if (shareButton.textContent !== "Delen") shareButton.textContent = "Delen";
-  }, 1600);
 }
 
 async function mapPool(items, limit, fn) {
@@ -3208,13 +3635,13 @@ function sharedNotes(plans) {
   return notes;
 }
 
-function drawPanes(pair, plans, stampIt) {
+function drawPanes(pair, plans, stampIt, stampBoxes) {
   const shared = sharedNotes(plans);
   plans.forEach((plan, side) => {
     const kind = panes[side].kind;
     const notes = compareMode ? { [kind]: shownStart(plan) } : shared;
     const placement = compareMode
-      ? { box: side ? "right" : "left", credit: side ? "right" : "left" }
+      ? { box: side ? "right" : "left", credit: side ? "right" : "left", yearBox: stampBoxes }
       : undefined;
     renderSide(side ? satBlendCtx : mapBlendCtx, plan, frames[pair[side]].label, kind, notes, stampIt, placement);
   });
@@ -3225,7 +3652,29 @@ function paneIndexes(index = frameIndex) {
   return panes.map((pane, side) => (side === activePane ? index : yearIndex(pane.year)));
 }
 
-async function renderYear(index, { wait = false, stampIt = true } = {}) {
+let paneStamp = null;
+
+function overlayYearBoxes(context, leftAlpha, rightAlpha = 1 - leftAlpha) {
+  if (!compareMode || !paneStamp) return;
+  const { pair, plans } = paneStamp;
+  const alphas = [leftAlpha, rightAlpha];
+  context.save();
+  plans.forEach((plan, side) => {
+    const alpha = alphas[side];
+    const frame = frames[pair[side]];
+    if (!frame || alpha <= 0.004) return;
+    const kind = panes[side].kind;
+    context.globalAlpha = alpha;
+    stamp(frame.label, context, "", { [kind]: shownStart(plan) }, {
+      box: side ? "right" : "left",
+      credit: side ? "right" : "left",
+      creditLine: false,
+    });
+  });
+  context.restore();
+}
+
+async function renderYear(index, { wait = false, stampIt = true, stampBoxes = !compareMode } = {}) {
   const pair = Array.isArray(index) ? index : paneIndexes(index);
   if (!view || pair.some((i) => !frames[i])) return null;
   const plans = pair.map((i, side) => sidePlan(panes[side].kind, Number(frames[i].label)));
@@ -3242,7 +3691,8 @@ async function renderYear(index, { wait = false, stampIt = true } = {}) {
     if (wait) await loads;
     else loads.then(requestRepaint);
   }
-  drawPanes(pair, plans, stampIt);
+  paneStamp = { pair, plans };
+  drawPanes(pair, plans, stampIt, stampBoxes);
   return plans;
 }
 
@@ -3253,6 +3703,7 @@ function paintLive() {
   }
   renderYear(frameIndex);
   drawLayerSplit(layerDrag ? layerDrag.split : layerSplit, false);
+  updateWipeThumbs();
 }
 
 function requestRepaint() {
@@ -3368,6 +3819,7 @@ function followView() {
   paintLive();
   scheduleBars();
   scheduleEngine();
+  schedulePlaceName();
 }
 
 function panByPixels(cssDx, cssDy) {
@@ -3403,6 +3855,7 @@ function moveTo(place) {
   paintLive();
   layoutWipeBars();
   scheduleEngine();
+  schedulePlaceName();
 }
 
 function applyLocatedPlace(place) {
@@ -3427,20 +3880,24 @@ function syncControls() {
   const ready = frames.length > 0;
   transport.hidden = !ready;
   transportControls.hidden = !ready;
-  loadProgress.hidden = !fetchingView;
   playButton.disabled = blocked || !ready;
+  exportButton.disabled = blocked || !ready;
   downloadButton.disabled = blocked || !ready;
   mp4Button.disabled = blocked || !ready;
   zipButton.disabled = blocked || !ready;
   modeSyncButton.disabled = blocked || !ready;
   modeCompareButton.disabled = blocked || !ready;
+  blendInput.disabled = blocked;
+  for (const select of layerSelects) select.disabled = blocked || !ready;
   for (const bar of barEls) {
     bar.querySelector(".kind-button").disabled = blocked || !ready;
   }
+  for (const button of splitKinds) button.disabled = blocked || !ready;
   yearBars.classList.toggle("blocked", blocked);
   canvas.classList.toggle("browsable", !blocked);
   syncWipeBars();
   fitPage();
+  layoutHelpTips();
 }
 
 function viewKey(place = view) {
@@ -3655,8 +4112,7 @@ async function runEngine() {
   const to = numberOrNull(toInput);
   const year = Number(frames[frameIndex]?.label);
   const layers = [];
-  mapBar.hidden = true;
-  satBar.hidden = true;
+  loadPlans = null;
   for (const kind of ["map", "sat"]) {
     if (!kindInfo[kind] || !panes.some((pane) => pane.kind === kind)) continue;
     const list = kindEditions(kind, place);
@@ -3675,7 +4131,6 @@ async function runEngine() {
       focusYears,
       current: new Set(focusYears.map((value) => list[editionAt(list, value)]).filter(Boolean)),
       name: kind === "map" ? "Kaart" : "Foto's",
-      bar: kind === "map" ? mapBar : satBar,
       plan: selected.map((edition) => ({ edition, state: "wait", missing: [], carried: false })),
     });
   }
@@ -3698,7 +4153,6 @@ async function runEngine() {
       : Math.min(...entry.layer.focusYears.map((value) => Math.abs(entry.item.edition.end - value)))
   );
   queue.sort((a, b) => distance(a) - distance(b));
-  barSpan = { start: Number(frames[0].label), end: Number(frames.at(-1).label) };
   fetchingView = true;
   syncControls();
   let added = 0;
@@ -3708,9 +4162,8 @@ async function runEngine() {
   const paint = () => {
     painted = false;
     if (!live() || !fetchingView) return;
-    for (const layer of layers) paintPlan(layer.bar, layer.plan, layer.name);
+    loadPlans = new Map(layers.map((layer) => [layer.kind, layer.plan]));
     scheduleBars();
-    setStatus(`Jaren voor dit beeld ophalen: ${done} van ${queue.length} · ${added} nieuwe tegel${added === 1 ? "" : "s"}`);
   };
   const tick = () => {
     if (painted) return;
@@ -3737,7 +4190,9 @@ async function runEngine() {
   } catch (error) {
     if (error.name === "AbortError" || !live()) return;
     fetchingView = false;
+    loadPlans = null;
     syncControls();
+    scheduleBars();
     settleWaiters(false);
     setStatus(error.message || "Kon de tegels voor dit beeld niet ophalen.");
   } finally {
@@ -3747,6 +4202,7 @@ async function runEngine() {
 
 function finishEngine(key, added, failed) {
   viewDoneKey = key;
+  loadPlans = null;
   if (fetchingView) {
     fetchingView = false;
     syncControls();
@@ -3769,12 +4225,14 @@ function rememberSettings() {
     from: session.from,
     to: session.to,
     hold: session.hold,
+    blend: blendMode,
     satellite: usingSatellite(),
     split: layerSplit,
     mode: compareMode ? "vergelijken" : "samen",
     kinds: panes.map((pane) => pane.kind),
     years: panes.map((pane) => pane.year),
     active: activePane,
+    place: placeName,
   };
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
@@ -3796,6 +4254,7 @@ function loadSession(data) {
     from: data.from ?? "",
     to: data.to ?? "",
     hold: data.hold ?? "800",
+    blend: data.blend === "fade" ? "fade" : "x",
     satellite: Boolean(data.satellite),
   };
   const storedSplit = Number(data.split);
@@ -3803,6 +4262,7 @@ function loadSession(data) {
     ? Math.min(1, Math.max(0, storedSplit))
     : (session.satellite ? 0 : 1);
   applyPaneSetup(data);
+  if (data.place) setPlaceName(data.place);
   return true;
 }
 
@@ -3836,6 +4296,7 @@ async function bootMap() {
     if ([...holdInput.options].some((option) => option.value === String(session.hold))) {
       holdInput.value = String(session.hold);
     }
+    syncBlendControl();
     setStatus(shared ? "Gedeelde plek openen…" : restored ? "Opgeslagen plek openen…" : "Kaart openen…");
     if ("indexedDB" in window) indexedDB.deleteDatabase(OLD_MOVIE_DB);
     const indexed = loadTileIndex();
@@ -3854,6 +4315,7 @@ async function bootMap() {
     await showFrame(frameIndex);
     layoutWipeBars();
     scheduleEngine(150);
+    schedulePlaceName(150);
     setStatus("Sleep en zoom de kaart. De jaren voor dit beeld worden vanzelf opgehaald.");
     clearShareQuery();
     if (!restored) useCurrentLocation();
@@ -3897,6 +4359,9 @@ function renderBars() {
   yearBars.classList.toggle("compare", compareMode);
   modeSyncButton.setAttribute("aria-pressed", String(!compareMode));
   modeCompareButton.setAttribute("aria-pressed", String(compareMode));
+  layerSelects.forEach((select, side) => {
+    select.value = panes[side].kind;
+  });
   const n = frames.length;
   barEls.forEach((bar, side) => {
     const kind = panes[side].kind;
@@ -3910,15 +4375,29 @@ function renderBars() {
     button.title = `${side ? "Rechts" : "Links"} van de lijn: ${KIND_NAMES[kind]}. Klik voor ${KIND_NAMES[other]}.`;
     button.setAttribute("aria-label", button.title);
     if (!n) return;
-    const list = timeline(kind);
     const cell = 100 / n;
+    const plan = loadPlans?.get(kind);
     const runs = [];
-    list.forEach((edition, i) => {
-      const state = !edition ? "none" : edition !== list[i - 1] ? "have" : "repeat";
-      const run = runs.at(-1);
-      if (run && run.state === state && state !== "have") run.end = i + 1;
-      else runs.push({ state, start: i, end: i + 1 });
-    });
+    if (plan) {
+      const editions = plan.map((item) => item.edition).filter(Boolean);
+      for (let i = 0; i < n; i += 1) {
+        const year = Number(frames[i].label);
+        const edition = sheetForYear(editions, year);
+        const item = edition && plan.find((entry) => entry.edition?.name === edition.name);
+        const state = !item ? "none" : item.state === "red" ? "fetch" : item.state === "wait" ? "wait" : item.state === "green" ? "have" : "repeat";
+        const run = runs.at(-1);
+        if (run && run.state === state && state !== "have" && state !== "fetch") run.end = i + 1;
+        else runs.push({ state, start: i, end: i + 1 });
+      }
+    } else {
+      const list = timeline(kind);
+      list.forEach((edition, i) => {
+        const state = !edition ? "none" : edition !== list[i - 1] ? "have" : "repeat";
+        const run = runs.at(-1);
+        if (run && run.state === state && state !== "have") run.end = i + 1;
+        else runs.push({ state, start: i, end: i + 1 });
+      });
+    }
     bar.querySelector(".zones").replaceChildren(...runs.map((run) => barPiece(
       run.state,
       run.start * cell,
@@ -3983,8 +4462,14 @@ function bindYearBars() {
     track.addEventListener("pointercancel", end);
     bar.querySelector(".kind-button").addEventListener("click", () => switchKind(side));
   });
+  splitKinds.forEach((button, side) => {
+    button.addEventListener("click", () => switchKind(side));
+  });
   modeSyncButton.addEventListener("click", () => setCompare(false));
   modeCompareButton.addEventListener("click", () => setCompare(true));
+  layerSelects.forEach((select, side) => {
+    select.addEventListener("change", () => setKind(side, select.value));
+  });
 }
 
 function scrubTo(index) {
@@ -4008,15 +4493,23 @@ function otherKind(kind) {
   return kind === "map" ? "sat" : "map";
 }
 
-function switchKind(side) {
-  if (recording || packing || !frames.length) return;
+function setKind(side, kind) {
+  if (kind !== "map" && kind !== "sat") return;
+  if (recording || packing || !frames.length || panes[side].kind === kind) {
+    layerSelects[side].value = panes[side].kind;
+    return;
+  }
   cancelPlayback();
-  panes[side].kind = otherKind(panes[side].kind);
-  if (!compareMode) panes[1 - side].kind = otherKind(panes[side].kind);
+  panes[side].kind = kind;
+  if (!compareMode) panes[1 - side].kind = otherKind(kind);
   rememberSettings();
   renderBars();
   paintLive();
   scheduleEngine();
+}
+
+function switchKind(side) {
+  setKind(side, otherKind(panes[side].kind));
 }
 
 function setCompare(on) {
