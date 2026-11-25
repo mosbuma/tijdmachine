@@ -183,9 +183,7 @@
     }
 
     input[type="number"] { width: 96px; }
-    #coords { width: 168px; }
-    #zoom { width: 72px; }
-    #map-year, #from, #to { width: 110px; }
+    #from, #to { width: 110px; }
 
     .stage-wrap {
       position: relative;
@@ -272,56 +270,9 @@
 
     button.primary:hover:not(:disabled) { background: var(--red-dark); }
 
-    .actions {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
     button[hidden] { display: none; }
 
     #setup-fields { display: contents; }
-
-    #locked-bar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex: 0 0 auto;
-    }
-
-    .locked-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin: 0;
-      min-width: 0;
-      font-family: Palatino, "Palatino Linotype", "Times New Roman", serif;
-      font-size: 26px;
-      font-weight: 500;
-      letter-spacing: -0.03em;
-      line-height: 1;
-      white-space: nowrap;
-    }
-
-    form.is-locked {
-      width: max-content;
-      max-width: none;
-      flex-wrap: nowrap;
-      align-items: center;
-      gap: 10px 14px;
-    }
-
-    form.is-locked .locked-title,
-    form.is-locked .check,
-    form.is-locked #reset,
-    form.is-locked #layer-toggle,
-    form.is-locked #share {
-      flex-shrink: 0;
-    }
-
-    form.is-locked .check { white-space: nowrap; }
-
-    #reset { flex: 0 0 auto; }
 
     #share, #layer-toggle {
       align-self: end;
@@ -604,28 +555,12 @@
         <button id="search" type="button">Zoeken</button>
       </span>
     </label>
-    <label>Jaar
-      <select id="map-year"></select>
-    </label>
-    <label>Coördinaten
-      <input id="coords" type="text" readonly tabindex="-1" aria-readonly="true">
-    </label>
-    <label>Zoom
-      <input id="zoom" type="text" readonly tabindex="-1" aria-readonly="true">
-    </label>
     <label>Van
       <select id="from"></select>
     </label>
     <label>Tot
       <select id="to"></select>
     </label>
-    <div class="actions">
-      <button class="primary" id="load" type="submit">Laden</button>
-    </div>
-    </div>
-    <div id="locked-bar" hidden>
-      <p class="locked-title"><span id="locked-label">Tijdreis</span></p>
-      <button id="reset" type="button">Nieuwe locatie / Zoom</button>
     </div>
     <button id="layer-toggle" type="button">Sat/Kaart</button>
     <button id="share" type="button">Delen</button>
@@ -678,11 +613,11 @@
 
   <dialog id="help">
     <h2>Zo gebruik je Tijdreis</h2>
-    <p>Zoek een plaats om het nieuwste jaar, zoom 9 en het volledige jaarbereik in te stellen. Verplaatst de zoekopdracht de kaart, dan wordt een geladen film gereset.</p>
-    <p>Sleep de kaart en zoom met een knijpbeweging of met scrollen, kies daarna Laden. Dat vergrendelt het beeld. Na het laden kun je alsnog slepen en zoomen. Staat het beeld even stil, dan haalt Tijdreis de tegels voor dat beeld en die zoom op en bewaart ze; de balken laten de voortgang zien. Nieuwe locatie / Zoom maakt de kaart weer vrij; de volgende pan of zoom wist opgeslagen tegels.</p>
-    <p>Na het laden: sleep de verticale scheidslijn op de kaart links/rechts. Links staat de kaart, rechts de satelliet. Sat/Kaart zet die lijn naar de andere kant van het beeld. De tijdbalk eronder loopt door de jaren. Ontbreekt een beeld, dan blijft het vorige staan, of je ziet een doorkruist pictogram als er niets eerder is. Ligt het beeld in de provincie Utrecht, dan staan aan de satellietkant ook de luchtfoto's van 1950, 1996, 2000, 2003 en 2025.</p>
-    <p>Plaats, jaar en de laatste download worden in deze browser bewaard. Delen kopieert een link met plek, zoom, jaarbereik en de stand van de scheiding. Een nieuw beeld krijgt de volle duur, een herhaling een kwart. Gelijk ogende bladen worden niet opnieuw opgehaald.</p>
-    <p>WebM neemt de film op. MP4 doet hetzelfde in een bestand dat Signal en WhatsApp kunnen afspelen. Zip bewaart de kant-en-klare beelden plus één bladzijde: uitpakken en index.html openen. Afspelen, de tijdbalk en de scheiding tussen kaart en satelliet werken dan zonder internet. De losse tegels zitten er niet in.</p>
+    <p>Zoek een plaats om de kaart daarheen te verplaatsen. Jaar, zoom en jaarbereik blijven staan.</p>
+    <p>Sleep de kaart en zoom met een knijpbeweging of met scrollen. Staat het beeld even stil, dan haalt Tijdreis eerst het jaar op dat je ziet en daarna de andere jaren tussen Van en Tot, voor dit beeld en deze zoom. De balken laten de voortgang zien. Tegels die al in deze browser staan worden niet opnieuw opgehaald; boven 1 GB ruimen de langst niet gebruikte tegels op.</p>
+    <p>Sleep de verticale scheidslijn op de kaart links/rechts. Links staat de kaart, rechts de satelliet. Sat/Kaart zet die lijn naar de andere kant van het beeld. De tijdbalk eronder loopt door de jaren. Ontbreekt een beeld, dan blijft het vorige staan, of je ziet een doorkruist pictogram als er niets eerder is. Ligt het beeld in de provincie Utrecht, dan staan aan de satellietkant ook de luchtfoto's van 1950, 1996, 2000, 2003 en 2025.</p>
+    <p>Plaats, zoom, jaar en jaarbereik worden in deze browser bewaard. Delen kopieert een link met plek, zoom, jaarbereik en de stand van de scheiding. Een nieuw beeld krijgt de volle duur, een herhaling een kwart. Gelijk ogende bladen worden niet opnieuw opgehaald.</p>
+    <p>WebM neemt de film op van het beeld zoals het nu staat. MP4 doet hetzelfde in een bestand dat Signal en WhatsApp kunnen afspelen. Zip bewaart de kant-en-klare beelden plus één bladzijde: uitpakken en index.html openen. Afspelen, de tijdbalk en de scheiding tussen kaart en satelliet werken dan zonder internet. Ontbreken er nog tegels, dan worden die eerst opgehaald.</p>
     <div class="dialog-actions">
       <button id="forget" class="linkish" type="button">Vergeet opgeslagen tegels</button>
       <button id="help-close" class="primary" type="button">Sluiten</button>
@@ -690,12 +625,12 @@
   </dialog>
 
   <dialog id="share-hint">
-    <p>Klik op de laden knop om te starten. Druk op het vraagteken voor meer informatie.</p>
+    <p>De jaren voor deze plek worden vanzelf opgehaald. Druk op Afspelen om de film te zien, of op het vraagteken voor meer informatie.</p>
     <div class="dialog-actions">
       <button id="share-hint-close" class="primary" type="button">OK</button>
     </div>
   </dialog>
 
-  <script src="app.js?v=53"></script>
+  <script src="app.js?v=54"></script>
 </body>
 </html>
