@@ -274,7 +274,7 @@
 
     #setup-fields { display: contents; }
 
-    #share, #layer-toggle {
+    #share {
       align-self: end;
       height: 36px;
       padding: 6px 12px;
@@ -401,15 +401,103 @@
 
     .playbar i { cursor: default; }
 
-    #scrub {
-      width: 100%;
-      height: 18px;
-      margin: 0;
+    .yearbar {
+      --kind: var(--red);
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr) 3rem;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .yearbar.sat { --kind: #4f9a92; }
+
+    .kind-button {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 26px;
       padding: 0;
-      accent-color: var(--red);
+      color: var(--ink);
+      background: var(--kind);
       border: 0;
-      background: transparent;
+      border-radius: 3px;
+    }
+
+    .kind-button:hover:not(:disabled) { background: var(--kind); filter: brightness(1.15); }
+
+    .track {
+      position: relative;
+      height: 26px;
+      cursor: pointer;
       touch-action: none;
+    }
+
+    .zones {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 9px;
+      height: 8px;
+      border-radius: 2px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .zones i {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+    }
+
+    .zones i.none {
+      background: repeating-linear-gradient(135deg, #5a5249 0 3px, #2f2924 3px 6px);
+    }
+
+    .zones i.have { background: var(--kind); }
+
+    .zones i.repeat { background: #77706a; }
+
+    .handle {
+      position: absolute;
+      top: 3px;
+      width: 12px;
+      height: 20px;
+      margin-left: -6px;
+      border-radius: 3px;
+      background: var(--paper);
+      border: 2px solid var(--kind);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+    }
+
+    .bar-year {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-size: 14px;
+    }
+
+    .blocked .track { pointer-events: none; opacity: 0.6; }
+
+    .compare .yearbar.active .bar-year { color: var(--paper); font-weight: 600; }
+    .compare .yearbar.active .handle { outline: 2px solid var(--paper); outline-offset: 1px; }
+    .compare .yearbar:not(.active) .handle { opacity: 0.8; }
+
+    .mode-switch {
+      display: flex;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .mode-switch button {
+      border-radius: 0;
+      padding-left: 10px;
+      padding-right: 10px;
+    }
+
+    .mode-switch button[aria-pressed="true"] {
+      background: var(--paper);
+      color: var(--ink);
+      box-shadow: inset 0 -3px 0 var(--red);
     }
 
     .transport > label { display: none; }
@@ -525,6 +613,12 @@
     }
 
     #share-hint { width: min(28rem, calc(100% - 32px)); }
+
+    #export-busy { width: min(24rem, calc(100% - 32px)); }
+    #export-busy::backdrop { background: rgba(28, 25, 22, 0.35); }
+    #export-busy progress { width: 100%; height: 10px; accent-color: var(--red); }
+    .export-hint { color: #6d6256; font-size: 14px; }
+    .export-hint:empty { display: none; }
     #share-hint .dialog-actions { justify-content: flex-end; }
 
     dialog .linkish { color: #6d6256; }
@@ -562,7 +656,6 @@
       <select id="to"></select>
     </label>
     </div>
-    <button id="layer-toggle" type="button">Sat/Kaart</button>
     <button id="share" type="button">Delen</button>
   </form>
 
@@ -592,10 +685,29 @@
   </div>
 
   <div class="transport" id="transport" hidden>
-    <div class="playline">
-      <input id="scrub" type="range" min="0" max="0" value="0" hidden disabled aria-label="Jaar">
+    <div class="playline" id="yearbars">
+      <div class="yearbar" data-pane="0">
+        <button class="kind-button" type="button"></button>
+        <div class="track" role="slider" aria-valuemin="0">
+          <div class="zones"></div>
+          <div class="handle"></div>
+        </div>
+        <span class="bar-year"></span>
+      </div>
+      <div class="yearbar" data-pane="1">
+        <button class="kind-button" type="button"></button>
+        <div class="track" role="slider" aria-valuemin="0">
+          <div class="zones"></div>
+          <div class="handle"></div>
+        </div>
+        <span class="bar-year"></span>
+      </div>
     </div>
     <div class="transport-controls" id="transport-controls" hidden>
+      <div class="mode-switch" role="group" aria-label="Afspelen">
+        <button id="mode-sync" type="button" aria-pressed="true" title="Beide balken lopen samen door de jaren.">Samen</button>
+        <button id="mode-compare" type="button" aria-pressed="false" title="Elke balk een eigen jaar; afspelen laat de twee beelden in elkaar overvloeien.">Vergelijken</button>
+      </div>
       <button id="play" type="button" disabled>Afspelen</button>
       <select id="hold" aria-label="Tempo">
         <option value="400">snel</option>
@@ -611,13 +723,25 @@
   <span id="year" hidden aria-hidden="true"></span>
   </div>
 
+  <dialog id="export-busy">
+    <h2 id="export-title">Film maken</h2>
+    <p id="export-text">Even geduld…</p>
+    <progress id="export-progress"></progress>
+    <p id="export-hint" class="export-hint"></p>
+    <div class="dialog-actions">
+      <span></span>
+      <button id="export-cancel" type="button">Annuleren</button>
+    </div>
+  </dialog>
+
   <dialog id="help">
     <h2>Zo gebruik je Tijdreis</h2>
     <p>Zoek een plaats om de kaart daarheen te verplaatsen. Jaar, zoom en jaarbereik blijven staan.</p>
     <p>Sleep de kaart en zoom met een knijpbeweging of met scrollen. Staat het beeld even stil, dan haalt Tijdreis eerst het jaar op dat je ziet en daarna de andere jaren tussen Van en Tot, voor dit beeld en deze zoom. De balken laten de voortgang zien. Tegels die al in deze browser staan worden niet opnieuw opgehaald; boven 1 GB ruimen de langst niet gebruikte tegels op.</p>
-    <p>Sleep de verticale scheidslijn op de kaart links/rechts. Links staat de kaart, rechts de satelliet. Sat/Kaart zet die lijn naar de andere kant van het beeld. De tijdbalk eronder loopt door de jaren. Ontbreekt een beeld, dan blijft het vorige staan, of je ziet een doorkruist pictogram als er niets eerder is. Ligt het beeld in de provincie Utrecht, dan staan aan de satellietkant ook de luchtfoto's van 1950, 1996, 2000, 2003 en 2025.</p>
-    <p>Plaats, zoom, jaar en jaarbereik worden in deze browser bewaard. Delen kopieert een link met plek, zoom, jaarbereik en de stand van de scheiding. Een nieuw beeld krijgt de volle duur, een herhaling een kwart. Gelijk ogende bladen worden niet opnieuw opgehaald.</p>
-    <p>WebM neemt de film op van het beeld zoals het nu staat. MP4 doet hetzelfde in een bestand dat Signal en WhatsApp kunnen afspelen. Zip bewaart de kant-en-klare beelden plus één bladzijde: uitpakken en index.html openen. Afspelen, de tijdbalk en de scheiding tussen kaart en satelliet werken dan zonder internet. Ontbreken er nog tegels, dan worden die eerst opgehaald.</p>
+    <p>Sleep de verticale scheidslijn op de kaart links/rechts. De bovenste balk hoort bij het beeld links van de lijn, de onderste bij het beeld rechts. Met het pictogram voor een balk kies je kaart of luchtfoto, dus ook kaart naast kaart of foto naast foto. Gekleurd zijn de jaren met een nieuw beeld, grijs de jaren waarin het vorige beeld blijft staan, en grijs gestreept betekent: nog geen beeld. Ontbreekt een beeld, dan blijft het vorige staan, of je ziet een doorkruist pictogram als er niets eerder is. Ligt het beeld in de provincie Utrecht, dan zijn er ook luchtfoto's van 1950, 1996, 2000, 2003 en 2025.</p>
+    <p>Samen: beide balken wijzen hetzelfde jaar aan en Afspelen loopt door alle jaren; zo zie je verandering in de tijd. Vergelijken: elke balk heeft een eigen jaar en Afspelen laat de twee beelden in elkaar overvloeien; zo vergelijk je twee momenten. De pijltjestoetsen links/rechts springen naar het volgende nieuwe beeld, met Shift één jaar. Bij Vergelijken kies je met omhoog/omlaag de balk.</p>
+    <p>Plaats, zoom, jaren, jaarbereik en de keuzes op de balken worden in deze browser bewaard. Delen kopieert een link met dat alles en de stand van de scheiding. Een nieuw beeld krijgt de volle duur, een herhaling een kwart. Gelijk ogende bladen worden niet opnieuw opgehaald.</p>
+    <p>WebM neemt de film op van het beeld zoals het nu staat; bij Vergelijken is dat de overgang tussen de twee beelden. MP4 doet hetzelfde in een bestand dat Signal en WhatsApp kunnen afspelen. Zip bewaart de kant-en-klare beelden plus één bladzijde: uitpakken en index.html openen. Afspelen, de tijdbalk en de scheidslijn werken dan zonder internet. Ontbreken er nog tegels, dan worden die eerst opgehaald.</p>
     <div class="dialog-actions">
       <button id="forget" class="linkish" type="button">Vergeet opgeslagen tegels</button>
       <button id="help-close" class="primary" type="button">Sluiten</button>
@@ -631,6 +755,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=54"></script>
+  <script src="app.js?v=61"></script>
 </body>
 </html>

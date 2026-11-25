@@ -38,14 +38,16 @@ const mapCount = document.querySelector("#map-count");
 const satCount = document.querySelector("#sat-count");
 const canvas = document.querySelector("#map");
 const playButton = document.querySelector("#play");
-const scrub = document.querySelector("#scrub");
+const yearBars = document.querySelector("#yearbars");
+const barEls = [...document.querySelectorAll(".yearbar")];
+const modeSyncButton = document.querySelector("#mode-sync");
+const modeCompareButton = document.querySelector("#mode-compare");
 const transport = document.querySelector("#transport");
 const transportControls = document.querySelector("#transport-controls");
 const mapBar = document.querySelector("#mapbar");
 const satBar = document.querySelector("#satbar");
 const yearEl = document.querySelector("#year");
 const holdInput = document.querySelector("#hold");
-const layerToggle = document.querySelector("#layer-toggle");
 const shareButton = document.querySelector("#share");
 const downloadButton = document.querySelector("#download");
 const mp4Button = document.querySelector("#mp4");
@@ -57,6 +59,13 @@ const shareHint = document.querySelector("#share-hint");
 const shareHintClose = document.querySelector("#share-hint-close");
 const helpOpen = document.querySelector("#help-open");
 const helpClose = document.querySelector("#help-close");
+const exportDialog = document.querySelector("#export-busy");
+const exportTitle = document.querySelector("#export-title");
+const exportText = document.querySelector("#export-text");
+const exportBar = document.querySelector("#export-progress");
+const exportHint = document.querySelector("#export-hint");
+const exportCancelButton = document.querySelector("#export-cancel");
+let exportCancelled = false;
 
 const ctx = canvas.getContext("2d");
 const offscreen = document.createElement("canvas");
@@ -135,6 +144,17 @@ let layerDrag = null;
 let presenting = 0;
 let bitmapActive = 0;
 const bitmapWaiting = [];
+let compareMode = false;
+const panes = [{ kind: "map", year: null }, { kind: "sat", year: null }];
+let activePane = 0;
+let barDrag = null;
+let barsTimer = null;
+const timelines = new Map();
+const KIND_NAMES = { map: "kaart", sat: "luchtfoto" };
+const KIND_ICONS = {
+  map: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1 4 8 1l8 3 7-3v19l-7 3-8-3-7 3ZM8 1v19M16 4v19" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  sat: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M2 7h5l2-4h6l2 4h5v14H2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="14" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+};
 let session = {
   from: "",
   to: "",
@@ -207,10 +227,6 @@ shareHint.addEventListener("click", (event) => {
 });
 if (readShareSetup()) openShareHint();
 else if (helpIsDue()) openHelp(true);
-
-layerToggle.addEventListener("click", () => {
-  flipLayerSide();
-});
 
 shareButton.addEventListener("click", () => {
   copyShareLink();
@@ -340,14 +356,12 @@ playButton.addEventListener("click", () => {
   else startPlayback();
 });
 
-scrub.addEventListener("input", () => {
-  cancelPlayback();
-  showFrame(Number(scrub.value));
-  if (viewDoneKey !== viewKey()) scheduleEngine();
-});
+bindYearBars();
+
+const RECORD_HINT = "De film wordt in gewone snelheid opgenomen; dit duurt zo lang als de film zelf.";
 
 downloadButton.addEventListener("click", () => {
-  recordMovie();
+  runExport("WebM maken", RECORD_HINT, recordMovie);
 });
 
 mp4Button.addEventListener("click", () => {
@@ -355,7 +369,13 @@ mp4Button.addEventListener("click", () => {
 });
 
 zipButton.addEventListener("click", () => {
-  downloadZip();
+  runExport("Zip maken", "", downloadZip);
+});
+
+exportCancelButton.addEventListener("click", cancelExport);
+exportDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  cancelExport();
 });
 
 forgetButton.addEventListener("click", async (event) => {
@@ -377,13 +397,21 @@ document.addEventListener("pointerdown", () => {
 
 document.addEventListener("keydown", (event) => {
   userGesture = true;
-  if (helpDialog.open || shareHint.open) return;
+  if (helpDialog.open || shareHint.open || exportDialog.open) return;
   const typing = event.target instanceof Element
-    && event.target.matches("input:not([type=checkbox]), select, textarea");
+    && event.target.matches("input:not([type=checkbox]):not([type=range]), select, textarea");
   if (typing) return;
   if (event.code === "Space") {
     event.preventDefault();
     if (!playButton.disabled) playButton.click();
+  } else if (event.altKey || event.ctrlKey || event.metaKey) {
+    return;
+  } else if (event.code === "ArrowLeft" || event.code === "ArrowRight") {
+    event.preventDefault();
+    stepFrame(event.code === "ArrowRight" ? 1 : -1, event.shiftKey);
+  } else if (compareMode && (event.code === "ArrowUp" || event.code === "ArrowDown")) {
+    event.preventDefault();
+    selectPane(event.code === "ArrowUp" ? 0 : 1);
   }
 }, true);
 
@@ -437,6 +465,7 @@ function fitPage() {
 function onViewportChange() {
   fitPage();
   layoutWipeBars();
+  if (frames.length) scheduleBars();
 }
 
 fitPage();
@@ -479,6 +508,49 @@ function setStatus(text) {
   const line = localizeStatus(text);
   statusEl.textContent = line;
   loadStatus.textContent = line;
+  if (exportDialog.open && !exportCancelled) exportText.textContent = line;
+}
+
+function openExport(title, hint = "") {
+  exportCancelled = false;
+  exportTitle.textContent = title;
+  exportText.textContent = "Even geduld…";
+  exportHint.textContent = hint;
+  exportBar.removeAttribute("value");
+  if (!exportDialog.open) exportDialog.showModal();
+}
+
+function exportProgress(done, total) {
+  if (!exportDialog.open) return;
+  if (done == null) {
+    exportBar.removeAttribute("value");
+    return;
+  }
+  exportBar.max = total;
+  exportBar.value = Math.min(total, Math.max(0, done));
+}
+
+function closeExport() {
+  if (exportDialog.open) exportDialog.close();
+  if (exportCancelled) setStatus("Export geannuleerd.");
+}
+
+function cancelExport() {
+  if (exportCancelled) return;
+  exportCancelled = true;
+  exportText.textContent = "Annuleren…";
+  cancelPlayback();
+  settleWaiters(false);
+}
+
+async function runExport(title, hint, task) {
+  if (!frames.length || recording || packing) return;
+  openExport(title, hint);
+  try {
+    await task();
+  } finally {
+    closeExport();
+  }
 }
 
 function parseMapUrl(value) {
@@ -500,8 +572,12 @@ function numberOrNull(input) {
   return Number.isFinite(value) ? value : null;
 }
 
+function leadKind() {
+  return (layerSplit < 0.5 ? panes[1] : panes[0]).kind;
+}
+
 function usingSatellite() {
-  return layerSplit < 0.5;
+  return leadKind() === "sat";
 }
 
 function parseEdition(name) {
@@ -764,7 +840,7 @@ function noteParts(notes) {
     .map(([kind, year]) => ({ kind, text: String(year) }));
 }
 
-function stamp(label, context = offCtx, line, notes) {
+function stamp(label, context = offCtx, line, notes, { box = "left", credit = "right" } = {}) {
   context.save();
   const parts = noteParts(notes);
   const padX = 18;
@@ -776,12 +852,14 @@ function stamp(label, context = offCtx, line, notes) {
     + NOTE_PART_GAP * Math.max(0, parts.length - 1);
   const textW = Math.max(yearW, noteW);
   const boxH = parts.length ? 112 : 72;
+  const boxW = textW + padX * 2;
+  const boxX = box === "right" ? WIDTH - 28 - boxW : 28;
   context.fillStyle = "rgba(243, 236, 223, 0.94)";
-  context.fillRect(28, 28, textW + padX * 2, boxH);
+  context.fillRect(boxX, 28, boxW, boxH);
   context.fillStyle = "#1c1916";
   context.textBaseline = "middle";
   context.font = "600 52px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
-  const middle = 28 + padX + textW / 2;
+  const middle = boxX + padX + textW / 2;
   context.fillText(String(label), middle - yearW / 2, 28 + 36);
   if (parts.length) {
     context.font = "600 26px Palatino, 'Palatino Linotype', 'Times New Roman', serif";
@@ -798,11 +876,11 @@ function stamp(label, context = offCtx, line, notes) {
 
   context.font = "16px 'Segoe UI', 'Helvetica Neue', sans-serif";
   context.fillStyle = "rgba(243, 236, 223, 0.95)";
-  context.textAlign = "right";
+  context.textAlign = credit;
   context.shadowColor = "rgba(28, 25, 22, 0.55)";
   context.shadowBlur = 6;
-  const credit = line || (frameSource === "satellite" ? "Beeldmateriaal.nl / Kadaster" : "Kadaster / Topotijdreis");
-  context.fillText(credit, WIDTH - 28, HEIGHT - 26);
+  const text = line || (frameSource === "satellite" ? "Beeldmateriaal.nl / Kadaster" : "Kadaster / Topotijdreis");
+  context.fillText(text, credit === "right" ? WIDTH - 28 : 28, HEIGHT - 26);
   context.restore();
 }
 
@@ -1067,7 +1145,7 @@ function updateWipeThumbs() {
 }
 
 function syncWipeBars() {
-  const show = frames.length > 0;
+  const show = frames.length > 0 && !(compareMode && (playing || recording));
   wipeBars.hidden = !show;
   if (show) layoutWipeBars();
 }
@@ -1078,44 +1156,6 @@ function finishLayerDrag() {
   if (!drag) return;
   layerSplit = drag.split;
   session.satellite = usingSatellite();
-  hasPresented = true;
-  rememberSettings();
-  layoutWipeBars();
-}
-
-async function flipLayerSide() {
-  const target = layerSplit > 0.5 ? 0 : 1;
-  if (!frames.length || recording) {
-    layerSplit = target;
-    session.satellite = layerSplit < 0.5;
-    rememberSettings();
-    return;
-  }
-  cancelPlayback();
-  const token = playToken;
-  const myShow = ++shownFrame;
-  const from = layerSplit;
-  await renderYear(frameIndex, { wait: true });
-  if (myShow !== shownFrame || token !== playToken) return;
-  const started = performance.now();
-  await new Promise((resolve) => {
-    const tick = (now) => {
-      if (myShow !== shownFrame || token !== playToken) {
-        resolve();
-        return;
-      }
-      const amount = Math.min(1, (now - started) / 280);
-      layerSplit = from + (target - from) * smoothStep(amount);
-      drawLayerSplit(layerSplit, false);
-      layoutWipeBars();
-      if (amount < 1) requestAnimationFrame(tick);
-      else resolve();
-    };
-    requestAnimationFrame(tick);
-  });
-  if (myShow !== shownFrame || token !== playToken) return;
-  layerSplit = target;
-  session.satellite = layerSplit < 0.5;
   hasPresented = true;
   rememberSettings();
   layoutWipeBars();
@@ -1174,16 +1214,43 @@ async function showFrame(index) {
   await presentFrame(index, playToken);
 }
 
-function stepFrame(delta) {
+let stepTarget = -1;
+
+function sameLook(a, b) {
+  const shown = compareMode
+    ? [panes[activePane]]
+    : panes.filter((_, side) => (side === 0 ? layerSplit > 0 : layerSplit < 1));
+  return shown.every((pane) => timeline(pane.kind)[a] === timeline(pane.kind)[b]);
+}
+
+function nextChange(from, delta) {
+  let index = from + delta;
+  while (index >= 0 && index < frames.length && sameLook(index, from)) index += delta;
+  if (index < 0 || index >= frames.length) return from;
+  if (delta < 0) {
+    while (index > 0 && sameLook(index - 1, index)) index -= 1;
+  }
+  return index;
+}
+
+function stepFrame(delta, single = false) {
   if (!frames.length || recording || packing) return;
-  const next = Math.min(frames.length - 1, Math.max(0, frameIndex + delta));
-  if (next === frameIndex && hasPresented) return;
+  const from = stepTarget >= 0 ? stepTarget : frameIndex;
+  const next = single
+    ? Math.min(frames.length - 1, Math.max(0, from + delta))
+    : nextChange(from, delta);
+  if (next === from && hasPresented) return;
+  stepTarget = next;
   cancelPlayback();
-  presentFrame(next, playToken, {
+  barDrag = null;
+  presentFrame(next, playToken, compareMode ? { fadeMs: 220 } : {
     wipeMs: 220,
     wipeAxis: "x",
     wipeSign: delta > 0 ? 1 : -1,
+  }).finally(() => {
+    if (stepTarget === next) stepTarget = -1;
   });
+  if (viewDoneKey !== viewKey()) scheduleEngine();
 }
 
 function startPlayback() {
@@ -1191,8 +1258,74 @@ function startPlayback() {
   const token = ++playToken;
   playing = true;
   playButton.textContent = "Pauzeren";
+  if (compareMode) {
+    syncWipeBars();
+    runCrossfade(token, { intro: 400 });
+    return;
+  }
   const start = frameIndex >= frames.length - 1 ? 0 : frameIndex;
   runPlayback(token, start);
+}
+
+function compareTiming() {
+  const holdMs = (Number(holdInput.value) || 800) * 2.5;
+  return { holdMs, fadeMs: Math.min(3500, holdMs) };
+}
+
+function compareLength({ holdMs, fadeMs }) {
+  return 3 * holdMs + 2 * fadeMs;
+}
+
+function compareMix(t, { holdMs, fadeMs }) {
+  const p = t % (2 * (holdMs + fadeMs));
+  if (p < holdMs) return 0;
+  if (p < holdMs + fadeMs) return smoothStep((p - holdMs) / fadeMs);
+  if (p < 2 * holdMs + fadeMs) return 1;
+  return 1 - smoothStep((p - 2 * holdMs - fadeMs) / fadeMs);
+}
+
+function drawPaneMix(mix) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(mapBlendCanvas, 0, 0);
+  if (mix > 0) {
+    ctx.globalAlpha = mix;
+    ctx.drawImage(satBlendCanvas, 0, 0);
+    ctx.globalAlpha = 1;
+  }
+}
+
+async function runCrossfade(token, { intro = 0, total = Infinity, onFrame } = {}) {
+  await renderYear(frameIndex, { wait: true });
+  if (token !== playToken) return false;
+  fromCtx.setTransform(1, 0, 0, 1, 0, 0);
+  fromCtx.globalAlpha = 1;
+  fromCtx.drawImage(canvas, 0, 0);
+  const timing = compareTiming();
+  const started = performance.now();
+  return new Promise((resolve) => {
+    const tick = (now) => {
+      if (token !== playToken) {
+        resolve(false);
+        return;
+      }
+      const t = now - started;
+      if (t < intro) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.drawImage(fromCanvas, 0, 0);
+        ctx.globalAlpha = smoothStep(t / intro);
+        ctx.drawImage(mapBlendCanvas, 0, 0);
+        ctx.globalAlpha = 1;
+      } else {
+        drawPaneMix(compareMix(Math.min(t - intro, total), timing));
+      }
+      onFrame?.(t - intro);
+      if (t - intro >= total) resolve(true);
+      else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
 }
 
 async function runPlayback(token, start) {
@@ -1214,10 +1347,15 @@ async function runPlayback(token, start) {
 }
 
 function cancelPlayback() {
+  const wasPlaying = playing;
   playToken += 1;
   playing = false;
   playButton.textContent = "Afspelen";
   if (cancelWait) cancelWait();
+  if (wasPlaying && compareMode) {
+    syncWipeBars();
+    requestRepaint();
+  }
 }
 
 function wait(ms, token) {
@@ -1271,8 +1409,19 @@ async function recordStream(mimeType, extension) {
     playing = true;
     recorder.start(100);
     let cancelled = false;
-    const start = recordingStart();
+    const start = compareMode ? frames.length : recordingStart();
     hasPresented = false;
+    if (compareMode) {
+      syncWipeBars();
+      const total = compareLength(compareTiming());
+      cancelled = !(await runCrossfade(token, {
+        total,
+        onFrame: (t) => {
+          track.requestFrame();
+          exportProgress(t, total);
+        },
+      }));
+    }
     for (let i = start; i < frames.length; i += 1) {
       if (token !== playToken) {
         cancelled = true;
@@ -1288,6 +1437,7 @@ async function recordStream(mimeType, extension) {
         cancelled = true;
         break;
       }
+      exportProgress(i - start + 1, frames.length - start);
       ctx.getImageData(0, 0, 1, 1);
       await new Promise((resolve) => requestAnimationFrame(resolve));
       track.requestFrame();
@@ -1306,6 +1456,7 @@ async function recordStream(mimeType, extension) {
     playButton.textContent = "Afspelen";
     recording = false;
     syncControls();
+    requestRepaint();
   }
 }
 
@@ -1313,7 +1464,9 @@ function movieBaseName() {
   const place = view;
   const x = Math.round(place?.x ?? 0);
   const y = Math.round(place?.y ?? 0);
-  const mode = usingSatellite() ? "satelliet" : "kaart";
+  const mode = compareMode
+    ? `vergelijk-${panes.map((pane) => `${KIND_NAMES[pane.kind]}${pane.year}`).join("-")}`
+    : usingSatellite() ? "satelliet" : "kaart";
   return `tijdreis-${mode}-${x}-${y}`;
 }
 
@@ -1340,7 +1493,11 @@ async function chooseMp4File() {
       suggestedName: name,
       types: [{ description: "MP4-video", accept: { "video/mp4": [".mp4"] } }],
     });
-    return { name, handle };
+    try {
+      return { name: handle.name || name, handle, writable: await handle.createWritable() };
+    } catch {
+      return { name, handle };
+    }
   } catch (error) {
     if (error.name === "AbortError") return null;
     return { name };
@@ -1348,14 +1505,24 @@ async function chooseMp4File() {
 }
 
 async function writeChosenFile(choice, blob) {
-  if (!choice?.handle) {
-    saveMovie(blob, "mp4");
-    return;
+  if (choice?.writable) {
+    try {
+      await choice.writable.write(blob);
+      await choice.writable.close();
+      setStatus(`Opgeslagen als ${choice.name}.`);
+      return;
+    } catch {
+      await discardChosenFile(choice);
+    }
+  } else if (choice?.handle) {
+    await discardChosenFile(choice);
   }
-  const writable = await choice.handle.createWritable();
-  await writable.write(blob);
-  await writable.close();
-  setStatus(`Opgeslagen als ${choice.name}.`);
+  saveMovie(blob, "mp4");
+}
+
+async function discardChosenFile(choice) {
+  await choice?.writable?.abort().catch(() => {});
+  await choice?.handle?.remove?.().catch(() => {});
 }
 
 async function mp4Codec() {
@@ -1380,23 +1547,36 @@ async function recordMp4() {
   if (!frames.length || recording || packing) return;
   const choice = await chooseMp4File();
   if (!choice) return;
-  const config = await mp4Codec();
-  if (!config) {
-    if (canvas.captureStream && MediaRecorder.isTypeSupported("video/mp4")) {
-      await recordStream("video/mp4", "mp4");
-    } else {
-      setStatus("Deze browser kan geen MP4 maken.");
-    }
-    return;
-  }
-  const blob = await recordEncodedMp4(config);
-  if (!blob) return;
+  openExport("MP4 maken", MP4_HINT);
   try {
-    await writeChosenFile(choice, blob);
-  } catch (error) {
-    setStatus(error.message || "Kon de film niet opslaan.");
+    const config = await mp4Codec();
+    if (!config) {
+      await discardChosenFile(choice);
+      if (canvas.captureStream && MediaRecorder.isTypeSupported("video/mp4")) {
+        exportHint.textContent = RECORD_HINT;
+        await recordStream("video/mp4", "mp4");
+      } else {
+        setStatus("Deze browser kan geen MP4 maken.");
+      }
+      return;
+    }
+    const blob = await recordEncodedMp4(config);
+    if (!blob) {
+      await discardChosenFile(choice);
+      return;
+    }
+    setStatus("MP4 opslaan…");
+    try {
+      await writeChosenFile(choice, blob);
+    } catch (error) {
+      setStatus(error.message || "Kon de film niet opslaan.");
+    }
+  } finally {
+    closeExport();
   }
 }
+
+const MP4_HINT = "Elk beeld wordt apart gecodeerd; dat gaat meestal sneller dan de film zelf.";
 
 async function recordEncodedMp4(config) {
   cancelPlayback();
@@ -1429,15 +1609,28 @@ async function recordEncodedMp4(config) {
     const token = ++playToken;
     playing = true;
     const start = recordingStart();
+    const shots = compareMode ? compareShots() : null;
+    if (shots) {
+      syncWipeBars();
+      await renderYear(frameIndex, { wait: true });
+    }
+    const count = shots ? shots.length : frames.length - start;
     hasPresented = false;
     let time = 0;
-    for (let i = start; i < frames.length; i += 1) {
+    for (let k = 0; k < count; k += 1) {
       if (failed) throw failed;
-      if (token !== playToken) return;
-      const hold = Math.max(1, Math.round(frameHold(i)));
-      const fadeMs = i === start ? 0 : Math.min(320, hold * 0.5);
-      const shown = await presentFrame(i, token, { fadeMs });
-      if (!shown || token !== playToken) return null;
+      if (token !== playToken) return null;
+      let hold;
+      if (shots) {
+        hold = Math.max(1, Math.round(shots[k].duration));
+        drawPaneMix(shots[k].mix);
+      } else {
+        const i = start + k;
+        hold = Math.max(1, Math.round(frameHold(i)));
+        const fadeMs = k === 0 ? 0 : Math.min(320, hold * 0.5);
+        const shown = await presentFrame(i, token, { fadeMs });
+        if (!shown || token !== playToken) return null;
+      }
       while (encoder.encodeQueueSize > 4) {
         await new Promise((resolve) => requestAnimationFrame(resolve));
       }
@@ -1448,7 +1641,10 @@ async function recordEncodedMp4(config) {
       encoder.encode(frame, { keyFrame: true });
       frame.close();
       time += hold;
+      exportProgress(k + 1, count);
     }
+    setStatus("MP4 inpakken…");
+    exportProgress(null);
     await encoder.flush();
     if (failed) throw failed;
     if (!description || samples.length !== durations.length) throw new Error("Kon de MP4 niet maken.");
@@ -1462,7 +1658,24 @@ async function recordEncodedMp4(config) {
     playButton.textContent = "Afspelen";
     recording = false;
     syncControls();
+    requestRepaint();
   }
+}
+
+function compareShots() {
+  const { holdMs, fadeMs } = compareTiming();
+  const steps = Math.max(2, Math.round(fadeMs / 50));
+  const shots = [{ mix: 0, duration: holdMs }];
+  const fade = (from, to) => {
+    for (let s = 1; s <= steps; s += 1) {
+      shots.push({ mix: from + (to - from) * smoothStep(s / steps), duration: fadeMs / steps });
+    }
+  };
+  fade(0, 1);
+  shots.push({ mix: 1, duration: holdMs });
+  fade(1, 0);
+  shots.push({ mix: 0, duration: holdMs });
+  return shots;
 }
 
 function mp4Bytes(parts) {
@@ -1657,7 +1870,7 @@ function zipStore(files) {
 
 function viewerPage(movie) {
   const data = JSON.stringify(movie).replace(/</g, "\\u003c");
-  const utrecht = (movie.credits || []).some((credit) => credit === "Provincie Utrecht");
+  const utrecht = (movie.credits || []).flat().some((credit) => credit === "Provincie Utrecht");
   const sourceLine = utrecht
     ? "Kaart: Kadaster, Topotijdreis. Satelliet: Beeldmateriaal.nl, Kadaster. Luchtfoto's van 1950, 1996, 2000, 2003 en 2025 in de provincie Utrecht: Provincie Utrecht."
     : "Kaart: Kadaster, Topotijdreis. Satelliet: Beeldmateriaal.nl, Kadaster.";
@@ -1711,8 +1924,7 @@ function viewerPage(movie) {
         <option value="1500">langzaam</option>
       </select>
     </label>
-    <button id="layer-toggle" type="button">Sat/Kaart</button>
-    <div class="playline"><input id="scrub" type="range" min="0" value="0" aria-label="Jaar"></div>
+    <div class="playline" id="playline"><input id="scrub" type="range" min="0" value="0" aria-label="Jaar"></div>
   </div>
   <p class="note">Deze bladzijde leest alleen de beelden naast zich. Uitgepakt openen in de browser; internet is niet nodig.</p>
   <script type="application/json" id="movie">${data}</script>
@@ -1735,8 +1947,9 @@ function viewerPage(movie) {
     const playBtn = document.getElementById("play");
     const scrub = document.getElementById("scrub");
     const hold = document.getElementById("hold");
-    const layerToggle = document.getElementById("layer-toggle");
     const splitbar = document.getElementById("splitbar");
+    const kinds = MOVIE.kinds || ["map", "sat"];
+    if (MOVIE.compare) document.getElementById("playline").hidden = true;
     const last = Math.max(0, MOVIE.years.length - 1);
     let index = Math.min(last, Math.max(0, MOVIE.index || 0));
     let split = MOVIE.split == null ? (MOVIE.satellite ? 0 : 1) : Math.min(1, Math.max(0, MOVIE.split));
@@ -1754,7 +1967,7 @@ function viewerPage(movie) {
     scrub.max = String(last);
     function loadImages() {
       const ids = [];
-      MOVIE.map.concat(MOVIE.sat).forEach((id) => {
+      MOVIE.a.concat(MOVIE.b).forEach((id) => {
         if (id != null && ids.indexOf(id) < 0) ids.push(id);
       });
       return Promise.all(ids.map((id) => new Promise((resolve) => {
@@ -1894,8 +2107,8 @@ function viewerPage(movie) {
         context.fillStyle = "#e7dcc4";
         context.fillRect(0, 0, W, H);
         context.drawImage(img, 0, 0, W, H);
-      } else drawMissing(context, kind);
-      stamp(context, label, kind, credit, note);
+      } else drawMissing(context, kind === "map" ? "map" : "picture");
+      if (!MOVIE.compare) stamp(context, label, kind, credit, note);
     }
 
     function buildLayers(i) {
@@ -1905,8 +2118,9 @@ function viewerPage(movie) {
         map: MOVIE.mapYears ? MOVIE.mapYears[i] : null,
         sat: MOVIE.satYears ? MOVIE.satYears[i] : null,
       };
-      composeLayer(mapBlend, MOVIE.map[i], label, "map", null, notes);
-      composeLayer(satBlend, MOVIE.sat[i], label, "picture", MOVIE.credits && MOVIE.credits[i], notes);
+      const credits = (MOVIE.credits && MOVIE.credits[i]) || [];
+      composeLayer(mapBlend, MOVIE.a[i], label, kinds[0], credits[0], notes);
+      composeLayer(satBlend, MOVIE.b[i], label, kinds[1], credits[1], notes);
       builtYear = i;
     }
 
@@ -1977,15 +2191,74 @@ function viewerPage(movie) {
     function holdFor(i) {
       const full = Number(hold.value) || 800;
       if (i === 0) return full;
-      const key = split < 0.5 ? "sat" : "map";
+      const key = split < 0.5 ? "b" : "a";
       if (MOVIE[key][i] !== MOVIE[key][i - 1]) return full;
       return full / 4;
     }
 
+    function sameLook(a, b) {
+      if (split > 0 && MOVIE.a[a] !== MOVIE.a[b]) return false;
+      if (split < 1 && MOVIE.b[a] !== MOVIE.b[b]) return false;
+      return true;
+    }
+
+    function nextChange(from, delta, single) {
+      let i = from + delta;
+      if (single) return Math.min(last, Math.max(0, i));
+      while (i >= 0 && i <= last && sameLook(i, from)) i += delta;
+      if (i < 0 || i > last) return from;
+      if (delta < 0) {
+        while (i > 0 && sameLook(i - 1, i)) i -= 1;
+      }
+      return i;
+    }
+
+    function startCompare() {
+      const token = ++playToken;
+      playing = true;
+      playBtn.textContent = "Pauzeren";
+      splitbar.hidden = true;
+      buildLayers(0);
+      fromCtx.setTransform(1, 0, 0, 1, 0, 0);
+      fromCtx.drawImage(screen, 0, 0);
+      const holdMs = (Number(hold.value) || 800) * 2.5;
+      const fadeMs = Math.min(3500, holdMs);
+      const cycle = 2 * (holdMs + fadeMs);
+      const started = performance.now();
+      const tick = (now) => {
+        if (token !== playToken) return;
+        const t = now - started;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        if (t < 400) {
+          ctx.drawImage(fromCanvas, 0, 0);
+          ctx.globalAlpha = smooth(t / 400);
+          ctx.drawImage(mapBlend, 0, 0);
+        } else {
+          const p = (t - 400) % cycle;
+          let mix = 1;
+          if (p < holdMs) mix = 0;
+          else if (p < holdMs + fadeMs) mix = smooth((p - holdMs) / fadeMs);
+          else if (p >= 2 * holdMs + fadeMs) mix = 1 - smooth((p - 2 * holdMs - fadeMs) / fadeMs);
+          ctx.drawImage(mapBlend, 0, 0);
+          ctx.globalAlpha = mix;
+          ctx.drawImage(satBlend, 0, 0);
+        }
+        ctx.globalAlpha = 1;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+
     function stopPlay() {
+      const was = playing;
       playToken += 1;
       playing = false;
       playBtn.textContent = "Afspelen";
+      if (was && MOVIE.compare) {
+        splitbar.hidden = false;
+        showAt(index);
+      }
     }
 
     function present(i, token, fadeMs, wipeMs, wipeSign, done) {
@@ -2040,6 +2313,10 @@ function viewerPage(movie) {
         showAt(index);
         return;
       }
+      if (MOVIE.compare) {
+        startCompare();
+        return;
+      }
       const token = ++playToken;
       playing = true;
       playBtn.textContent = "Pauzeren";
@@ -2075,25 +2352,6 @@ function viewerPage(movie) {
       stopPlay();
       showAt(Number(scrub.value));
     });
-    layerToggle.addEventListener("click", () => {
-      stopPlay();
-      const target = split > 0.5 ? 0 : 1;
-      const from = split;
-      builtYear = -1;
-      buildLayers(index);
-      const token = playToken;
-      const my = ++showId;
-      const started = performance.now();
-      const tick = (now) => {
-        if (token !== playToken || my !== showId) return;
-        const amount = Math.min(1, (now - started) / 280);
-        split = from + (target - from) * smooth(amount);
-        drawSplit(ctx, split);
-        layout();
-        if (amount < 1) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    });
     hold.addEventListener("change", stopPlay);
 
     splitbar.addEventListener("pointerdown", (event) => {
@@ -2128,12 +2386,12 @@ function viewerPage(movie) {
       if (event.code === "Space") {
         event.preventDefault();
         startPlay();
-      } else if (event.code === "ArrowRight") {
+      } else if ((event.code === "ArrowRight" || event.code === "ArrowLeft") && !MOVIE.compare) {
+        event.preventDefault();
         stopPlay();
-        present(Math.min(last, index + 1), playToken, 0, 220, 1);
-      } else if (event.code === "ArrowLeft") {
-        stopPlay();
-        present(Math.max(0, index - 1), playToken, 0, 220, -1);
+        const delta = event.code === "ArrowRight" ? 1 : -1;
+        const next = nextChange(index, delta, event.shiftKey);
+        if (next !== index) present(next, playToken, 0, 220, delta);
       }
     });
 
@@ -2162,38 +2420,57 @@ async function downloadZip() {
     if (!(await readyForExport())) return;
     const blobs = [];
     const ids = new Map();
-    const movie = { years: [], map: [], sat: [], credits: [], mapYears: [], satYears: [] };
-    for (let i = 0; i < frames.length; i += 1) {
+    const movie = { years: [], a: [], b: [], credits: [], mapYears: [], satYears: [] };
+    const credit = (plan, side) => (panes[side].kind === "sat" ? satelliteCredit(plan.shown || plan.edition) : null);
+    if (compareMode) {
+      setStatus("Zip maken…");
+      const plans = await renderYear(frameIndex, { wait: true });
+      movie.compare = true;
+      movie.years.push(panes.map((pane) => pane.year).join(" · "));
+      movie.a.push(0);
+      movie.b.push(1);
+      blobs.push(await canvasBlob(mapBlendCanvas), await canvasBlob(satBlendCanvas));
+      movie.credits.push(plans.map(credit));
+      movie.mapYears.push(null);
+      movie.satYears.push(null);
+    }
+    for (let i = 0; !compareMode && i < frames.length; i += 1) {
+      if (exportCancelled) return;
       setStatus(`Zip maken… ${i + 1} van ${frames.length}`);
+      exportProgress(i, frames.length);
       const plans = await renderYear(i, { wait: true, stampIt: false });
       movie.years.push(frames[i].label);
-      for (const kind of ["map", "sat"]) {
-        const plan = plans[kind];
+      for (const side of [0, 1]) {
+        const plan = plans[side];
         let id = null;
         if (plan.edition) {
-          const signature = plan.layers.flatMap((layer) => layer.items.map((item) => item.url)).join("|") || `leeg:${kind}`;
+          const signature = plan.layers.flatMap((layer) => layer.items.map((item) => item.url)).join("|")
+            || `leeg:${panes[side].kind}`;
           if (!ids.has(signature)) {
             ids.set(signature, blobs.length);
-            blobs.push(await canvasBlob(kind === "map" ? mapBlendCanvas : satBlendCanvas));
+            blobs.push(await canvasBlob(side ? satBlendCanvas : mapBlendCanvas));
           }
           id = ids.get(signature);
         }
-        movie[kind].push(id);
+        movie[side ? "b" : "a"].push(id);
       }
-      movie.credits.push(satelliteCredit(plans.sat.shown));
-      movie.mapYears.push(plans.map.shown?.start ?? null);
-      movie.satYears.push(plans.sat.shown?.start ?? null);
+      const notes = sharedNotes(plans);
+      movie.credits.push(plans.map(credit));
+      movie.mapYears.push(notes.map);
+      movie.satYears.push(notes.sat);
     }
+    if (exportCancelled) return;
+    setStatus("Zip inpakken…");
+    exportProgress(null);
     const folder = movieBaseName();
     const files = [{
       name: `${folder}/index.html`,
       data: new TextEncoder().encode(viewerPage({
         ...movie,
         hold: Number(holdInput.value) || 800,
-        linear: false,
-        satellite: usingSatellite(),
+        kinds: panes.map((pane) => pane.kind),
         split: layerSplit,
-        index: frameIndex,
+        index: compareMode ? 0 : frameIndex,
         place: placeInput.value.trim(),
       })),
     }];
@@ -2473,7 +2750,8 @@ function readSettings() {
   }
 }
 
-const SHARE_KEYS = ["x", "y", "z", "jaar", "van", "tot", "sat", "lijn", "split", "tempo", "plaats"];
+const SHARE_KEYS = ["x", "y", "z", "jaar", "jaar2", "van", "tot", "sat", "lijn", "split", "tempo", "plaats", "modus", "links", "rechts"];
+const SHARE_KINDS = { kaart: "map", foto: "sat" };
 let openedFromShare = false;
 
 function readShareSetup() {
@@ -2504,6 +2782,13 @@ function readShareSetup() {
     linear: false,
     hold: tempo === "400" || tempo === "800" || tempo === "1500" ? tempo : null,
     place: (params.get("plaats") || "").slice(0, 120),
+    panes: {
+      mode: params.get("modus") === "vergelijken" ? "vergelijken" : "samen",
+      kinds: [SHARE_KINDS[params.get("links")] || "map", SHARE_KINDS[params.get("rechts")] || "sat"],
+      years: [params.get("jaar"), params.get("jaar2") || params.get("jaar")]
+        .map((value) => (value && /^\d{4}$/.test(value) ? Number(value) : null)),
+      active: 0,
+    },
   };
 }
 
@@ -2521,6 +2806,7 @@ function applyShareSetup(setup) {
   }
   if (setup.hold) session.hold = setup.hold;
   if (setup.place) placeInput.value = setup.place;
+  applyPaneSetup(setup.panes);
 }
 
 function shareSetupUrl() {
@@ -2530,7 +2816,14 @@ function shareSetupUrl() {
   url.searchParams.set("x", round(view.x, 2));
   url.searchParams.set("y", round(view.y, 2));
   url.searchParams.set("z", round(view.zoom, 3));
-  url.searchParams.set("jaar", String(view.year));
+  url.searchParams.set("jaar", String(compareMode ? panes[0].year : view.year));
+  if (compareMode) {
+    url.searchParams.set("modus", "vergelijken");
+    url.searchParams.set("jaar2", String(panes[1].year));
+  }
+  const shareKind = (kind) => (kind === "map" ? "kaart" : "foto");
+  url.searchParams.set("links", shareKind(panes[0].kind));
+  url.searchParams.set("rechts", shareKind(panes[1].kind));
   if (fromInput.value) url.searchParams.set("van", fromInput.value);
   if (toInput.value) url.searchParams.set("tot", toInput.value);
   url.searchParams.set("sat", usingSatellite() ? "1" : "0");
@@ -2886,7 +3179,7 @@ function sidePlan(kind, year, place = view) {
   return plan;
 }
 
-function renderSide(context, plan, label, kind, notes, stampIt) {
+function renderSide(context, plan, label, kind, notes, stampIt, placement) {
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.globalAlpha = 1;
   if (!plan.edition || plan.empty) {
@@ -2900,25 +3193,44 @@ function renderSide(context, plan, label, kind, notes, stampIt) {
   }
   if (!stampIt) return;
   const credit = kind === "map" ? "Kadaster / Topotijdreis" : satelliteCredit(plan.shown || plan.edition);
-  stamp(label, context, credit, notes);
+  stamp(label, context, credit, notes, placement);
 }
 
-function drawYear(frame, plans, stampIt) {
-  const notes = {
-    map: plans.map.empty ? null : plans.map.shown?.start ?? null,
-    sat: plans.sat.empty ? null : plans.sat.shown?.start ?? null,
-  };
-  renderSide(mapBlendCtx, plans.map, frame.label, "map", notes, stampIt);
-  renderSide(satBlendCtx, plans.sat, frame.label, "sat", notes, stampIt);
+function shownStart(plan) {
+  return plan.empty ? null : plan.shown?.start ?? null;
+}
+
+function sharedNotes(plans) {
+  const notes = { map: null, sat: null };
+  plans.forEach((plan, side) => {
+    notes[panes[side].kind] ??= shownStart(plan);
+  });
+  return notes;
+}
+
+function drawPanes(pair, plans, stampIt) {
+  const shared = sharedNotes(plans);
+  plans.forEach((plan, side) => {
+    const kind = panes[side].kind;
+    const notes = compareMode ? { [kind]: shownStart(plan) } : shared;
+    const placement = compareMode
+      ? { box: side ? "right" : "left", credit: side ? "right" : "left" }
+      : undefined;
+    renderSide(side ? satBlendCtx : mapBlendCtx, plan, frames[pair[side]].label, kind, notes, stampIt, placement);
+  });
+}
+
+function paneIndexes(index = frameIndex) {
+  if (!compareMode) return [index, index];
+  return panes.map((pane, side) => (side === activePane ? index : yearIndex(pane.year)));
 }
 
 async function renderYear(index, { wait = false, stampIt = true } = {}) {
-  const frame = frames[index];
-  if (!frame || !view) return null;
-  const year = Number(frame.label);
-  const plans = { map: sidePlan("map", year), sat: sidePlan("sat", year) };
+  const pair = Array.isArray(index) ? index : paneIndexes(index);
+  if (!view || pair.some((i) => !frames[i])) return null;
+  const plans = pair.map((i, side) => sidePlan(panes[side].kind, Number(frames[i].label)));
   const urls = [];
-  for (const plan of [plans.map, plans.sat]) {
+  for (const plan of plans) {
     for (const layer of plan.layers) {
       for (const item of layer.items) {
         if (!bitmaps.has(item.url)) urls.push(item.url);
@@ -2930,7 +3242,7 @@ async function renderYear(index, { wait = false, stampIt = true } = {}) {
     if (wait) await loads;
     else loads.then(requestRepaint);
   }
-  drawYear(frame, plans, stampIt);
+  drawPanes(pair, plans, stampIt);
   return plans;
 }
 
@@ -2969,8 +3281,9 @@ async function presentFrame(index, token, {
     if (myShow !== shownFrame || token !== playToken) return false;
     frameIndex = index;
     view.year = Number(frame.label);
-    scrub.value = String(index);
+    if (compareMode) panes[activePane].year = view.year;
     yearEl.textContent = frame.label;
+    placeHandles();
     rememberSettings();
     const wipe = wipeMs > 16 && hasPresented;
     const blend = !wipe && fadeMs > 16 && hasPresented;
@@ -3017,26 +3330,16 @@ async function presentFrame(index, token, {
   }
 }
 
-function sourceAt(kind, index) {
-  if (!kindInfo[kind] || !frames[index]) return null;
-  const list = kindEditions(kind);
-  const start = editionAt(list, Number(frames[index].label));
-  if (start < 0) return null;
-  const grid = kindGrid(kind, kindLevel(kind, view.zoom));
-  return resolveTile(list, start, grid, centerOf(view, grid))?.url || list[start].name;
-}
-
 function frameHold(index) {
   const full = Number(holdInput.value);
   if (index === 0) return full;
-  const kind = usingSatellite() ? "sat" : "map";
-  return sourceAt(kind, index) !== sourceAt(kind, index - 1) ? full : full / 4;
+  const list = timeline(leadKind());
+  return list[index] !== list[index - 1] ? full : full / 4;
 }
 
 function recordingStart() {
-  if (!usingSatellite()) return 0;
-  const photos = kindEditions("sat");
-  const first = frames.findIndex((frame) => editionAt(photos, Number(frame.label)) >= 0);
+  if (leadKind() !== "sat") return 0;
+  const first = timeline("sat").findIndex(Boolean);
   return first < 0 ? 0 : first;
 }
 
@@ -3048,15 +3351,22 @@ function rebuildFrames() {
   let index = frames.findIndex((frame) => Number(frame.label) === keep);
   if (index < 0) index = Number.isFinite(keep) && keep < years[0] ? 0 : frames.length - 1;
   frameIndex = Math.max(0, index);
-  scrub.max = String(Math.max(0, frames.length - 1));
-  scrub.value = String(frameIndex);
+  if (frames.length) {
+    for (const pane of panes) {
+      if (pane.year == null && compareMode) pane.year = Number(frames[frameIndex].label);
+      if (pane.year != null) pane.year = Number(frames[yearIndex(pane.year)].label);
+    }
+    if (compareMode) frameIndex = yearIndex(panes[activePane].year);
+  }
   if (view && frames[frameIndex]) view.year = Number(frames[frameIndex].label);
   syncControls();
+  renderBars();
   return before !== frames.map((frame) => frame.label).join();
 }
 
 function followView() {
   paintLive();
+  scheduleBars();
   scheduleEngine();
 }
 
@@ -3116,15 +3426,18 @@ function syncControls() {
   const blocked = recording || packing;
   const ready = frames.length > 0;
   transport.hidden = !ready;
-  scrub.hidden = !ready;
   transportControls.hidden = !ready;
   loadProgress.hidden = !fetchingView;
   playButton.disabled = blocked || !ready;
   downloadButton.disabled = blocked || !ready;
   mp4Button.disabled = blocked || !ready;
   zipButton.disabled = blocked || !ready;
-  scrub.disabled = blocked || !ready;
-  layerToggle.disabled = blocked;
+  modeSyncButton.disabled = blocked || !ready;
+  modeCompareButton.disabled = blocked || !ready;
+  for (const bar of barEls) {
+    bar.querySelector(".kind-button").disabled = blocked || !ready;
+  }
+  yearBars.classList.toggle("blocked", blocked);
   canvas.classList.toggle("browsable", !blocked);
   syncWipeBars();
   fitPage();
@@ -3137,6 +3450,7 @@ function viewKey(place = view) {
     Math.round(place.zoom * 100),
     fromInput.value,
     toInput.value,
+    panes.map((pane) => pane.kind).join("+"),
   ].join("|");
 }
 
@@ -3179,8 +3493,8 @@ async function readyForExport() {
   if (viewDoneKey === viewKey()) return true;
   setStatus("Eerst de ontbrekende tegels voor dit beeld ophalen…");
   const ok = await waitForView();
-  if (!ok) setStatus("Niet alle tegels voor dit beeld konden worden opgehaald.");
-  return ok;
+  if (!ok && !exportCancelled) setStatus("Niet alle tegels voor dit beeld konden worden opgehaald.");
+  return ok && !exportCancelled;
 }
 
 function tileMark(edition, grid, tile, signal) {
@@ -3341,19 +3655,25 @@ async function runEngine() {
   const to = numberOrNull(toInput);
   const year = Number(frames[frameIndex]?.label);
   const layers = [];
+  mapBar.hidden = true;
+  satBar.hidden = true;
   for (const kind of ["map", "sat"]) {
-    if (!kindInfo[kind]) continue;
+    if (!kindInfo[kind] || !panes.some((pane) => pane.kind === kind)) continue;
     const list = kindEditions(kind, place);
     const selected = selectEditions(list, from, to);
     if (!selected.length) continue;
     const grid = kindGrid(kind, kindLevel(kind, place.zoom));
+    const focusYears = compareMode
+      ? panes.filter((pane) => pane.kind === kind).map((pane) => pane.year)
+      : [year];
     layers.push({
       kind,
       list,
       grid,
       tiles: tilesFor(viewBounds(place, grid), grid),
       focus: centerOf(place, grid),
-      current: list[editionAt(list, year)] || null,
+      focusYears,
+      current: new Set(focusYears.map((value) => list[editionAt(list, value)]).filter(Boolean)),
       name: kind === "map" ? "Kaart" : "Foto's",
       bar: kind === "map" ? mapBar : satBar,
       plan: selected.map((edition) => ({ edition, state: "wait", missing: [], carried: false })),
@@ -3373,7 +3693,9 @@ async function runEngine() {
     return;
   }
   const distance = (entry) => (
-    entry.item.edition === entry.layer.current ? -1 : Math.abs(entry.item.edition.end - year)
+    entry.layer.current.has(entry.item.edition)
+      ? -1
+      : Math.min(...entry.layer.focusYears.map((value) => Math.abs(entry.item.edition.end - value)))
   );
   queue.sort((a, b) => distance(a) - distance(b));
   barSpan = { start: Number(frames[0].label), end: Number(frames.at(-1).label) };
@@ -3387,6 +3709,7 @@ async function runEngine() {
     painted = false;
     if (!live() || !fetchingView) return;
     for (const layer of layers) paintPlan(layer.bar, layer.plan, layer.name);
+    scheduleBars();
     setStatus(`Jaren voor dit beeld ophalen: ${done} van ${queue.length} · ${added} nieuwe tegel${added === 1 ? "" : "s"}`);
   };
   const tick = () => {
@@ -3430,6 +3753,7 @@ function finishEngine(key, added, failed) {
   }
   settleWaiters(true);
   requestRepaint();
+  scheduleBars();
   flushIndex();
   evictTiles();
   if (recording || packing) return;
@@ -3447,6 +3771,10 @@ function rememberSettings() {
     hold: session.hold,
     satellite: usingSatellite(),
     split: layerSplit,
+    mode: compareMode ? "vergelijken" : "samen",
+    kinds: panes.map((pane) => pane.kind),
+    years: panes.map((pane) => pane.year),
+    active: activePane,
   };
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
@@ -3474,7 +3802,24 @@ function loadSession(data) {
   layerSplit = Number.isFinite(storedSplit)
     ? Math.min(1, Math.max(0, storedSplit))
     : (session.satellite ? 0 : 1);
+  applyPaneSetup(data);
   return true;
+}
+
+function applyPaneSetup({ mode, kinds, years, active }) {
+  compareMode = mode === "vergelijken";
+  if (Array.isArray(kinds)) {
+    kinds.slice(0, 2).forEach((kind, side) => {
+      if (kind === "map" || kind === "sat") panes[side].kind = kind;
+    });
+  }
+  if (Array.isArray(years)) {
+    years.slice(0, 2).forEach((year, side) => {
+      panes[side].year = year != null && Number.isFinite(Number(year)) ? Number(year) : null;
+    });
+  }
+  activePane = active === 1 ? 1 : 0;
+  if (!compareMode) panes[1].kind = otherKind(panes[0].kind);
 }
 
 async function bootMap() {
@@ -3517,6 +3862,180 @@ async function bootMap() {
     clearShareQuery();
     setStatus(error.message || "Kon de kaart niet openen.");
   }
+}
+
+function yearIndex(year) {
+  if (!frames.length || year == null) return frameIndex;
+  const first = Number(frames[0].label);
+  return Math.min(frames.length - 1, Math.max(0, Math.round(year - first)));
+}
+
+function timeline(kind) {
+  const key = [viewKey(), frames.length, frames[0]?.label, tileIndex.size, cacheEpoch].join("|");
+  const cached = timelines.get(kind);
+  if (cached?.key === key) return cached.list;
+  const list = frames.map((frame) => {
+    const plan = sidePlan(kind, Number(frame.label));
+    return plan.empty ? null : plan.shown || plan.edition;
+  });
+  timelines.set(kind, { key, list });
+  return list;
+}
+
+function barPiece(className, left, width, title) {
+  const piece = document.createElement("i");
+  piece.className = className;
+  piece.style.left = `${left}%`;
+  piece.style.width = `${width}%`;
+  if (title) piece.title = title;
+  return piece;
+}
+
+function renderBars() {
+  clearTimeout(barsTimer);
+  barsTimer = null;
+  yearBars.classList.toggle("compare", compareMode);
+  modeSyncButton.setAttribute("aria-pressed", String(!compareMode));
+  modeCompareButton.setAttribute("aria-pressed", String(compareMode));
+  const n = frames.length;
+  barEls.forEach((bar, side) => {
+    const kind = panes[side].kind;
+    const other = kind === "map" ? "sat" : "map";
+    bar.classList.toggle("sat", kind === "sat");
+    const button = bar.querySelector(".kind-button");
+    if (button.dataset.kind !== kind) {
+      button.innerHTML = KIND_ICONS[kind];
+      button.dataset.kind = kind;
+    }
+    button.title = `${side ? "Rechts" : "Links"} van de lijn: ${KIND_NAMES[kind]}. Klik voor ${KIND_NAMES[other]}.`;
+    button.setAttribute("aria-label", button.title);
+    if (!n) return;
+    const list = timeline(kind);
+    const cell = 100 / n;
+    const runs = [];
+    list.forEach((edition, i) => {
+      const state = !edition ? "none" : edition !== list[i - 1] ? "have" : "repeat";
+      const run = runs.at(-1);
+      if (run && run.state === state && state !== "have") run.end = i + 1;
+      else runs.push({ state, start: i, end: i + 1 });
+    });
+    bar.querySelector(".zones").replaceChildren(...runs.map((run) => barPiece(
+      run.state,
+      run.start * cell,
+      (run.end - run.start) * cell,
+      run.state === "have" ? frames[run.start].label : null,
+    )));
+  });
+  placeHandles();
+}
+
+function placeHandles() {
+  const n = frames.length;
+  barEls.forEach((bar, side) => {
+    bar.classList.toggle("active", compareMode && side === activePane);
+    const dragged = barDrag && (!compareMode || barDrag.pane === side) ? barDrag.index : null;
+    const index = dragged ?? (compareMode ? yearIndex(panes[side].year) : frameIndex);
+    bar.querySelector(".handle").style.left = `${((index + 0.5) / Math.max(1, n)) * 100}%`;
+    bar.querySelector(".bar-year").textContent = frames[index]?.label ?? "";
+    const track = bar.querySelector(".track");
+    track.setAttribute("aria-valuemax", String(Math.max(0, n - 1)));
+    track.setAttribute("aria-valuenow", String(index));
+    track.setAttribute("aria-valuetext", frames[index]?.label ?? "");
+    track.setAttribute("aria-label", `Jaar ${KIND_NAMES[panes[side].kind]} ${side ? "rechts" : "links"}`);
+  });
+}
+
+function scheduleBars() {
+  if (barsTimer) return;
+  barsTimer = setTimeout(renderBars, 250);
+}
+
+function bindYearBars() {
+  barEls.forEach((bar, side) => {
+    const track = bar.querySelector(".track");
+    const indexAt = (clientX) => {
+      const rect = track.getBoundingClientRect();
+      const n = frames.length;
+      if (!rect.width || !n) return 0;
+      return Math.min(n - 1, Math.max(0, Math.floor(((clientX - rect.left) / rect.width) * n)));
+    };
+    track.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || !frames.length || recording || packing) return;
+      event.preventDefault();
+      try { track.setPointerCapture(event.pointerId); } catch { /* pointer already gone */ }
+      selectPane(side);
+      barDrag = { id: event.pointerId, pane: side, index: indexAt(event.clientX) };
+      scrubTo(barDrag.index);
+    });
+    track.addEventListener("pointermove", (event) => {
+      if (!barDrag || barDrag.id !== event.pointerId) return;
+      const index = indexAt(event.clientX);
+      if (index === barDrag.index) return;
+      barDrag.index = index;
+      scrubTo(index);
+    });
+    const end = (event) => {
+      if (!barDrag || barDrag.id !== event.pointerId) return;
+      barDrag = null;
+      placeHandles();
+    };
+    track.addEventListener("pointerup", end);
+    track.addEventListener("pointercancel", end);
+    bar.querySelector(".kind-button").addEventListener("click", () => switchKind(side));
+  });
+  modeSyncButton.addEventListener("click", () => setCompare(false));
+  modeCompareButton.addEventListener("click", () => setCompare(true));
+}
+
+function scrubTo(index) {
+  cancelPlayback();
+  placeHandles();
+  showFrame(index);
+  if (viewDoneKey !== viewKey()) scheduleEngine();
+}
+
+function selectPane(side) {
+  if (!compareMode || activePane === side) return;
+  activePane = side;
+  stepTarget = -1;
+  frameIndex = yearIndex(panes[side].year);
+  if (view && frames[frameIndex]) view.year = Number(frames[frameIndex].label);
+  rememberSettings();
+  placeHandles();
+}
+
+function otherKind(kind) {
+  return kind === "map" ? "sat" : "map";
+}
+
+function switchKind(side) {
+  if (recording || packing || !frames.length) return;
+  cancelPlayback();
+  panes[side].kind = otherKind(panes[side].kind);
+  if (!compareMode) panes[1 - side].kind = otherKind(panes[side].kind);
+  rememberSettings();
+  renderBars();
+  paintLive();
+  scheduleEngine();
+}
+
+function setCompare(on) {
+  if (on === compareMode || recording || packing || !frames.length) return;
+  cancelPlayback();
+  const year = Number(frames[frameIndex].label);
+  compareMode = on;
+  if (on) {
+    panes[activePane].year = year;
+    for (const pane of panes) pane.year ??= year;
+    frameIndex = yearIndex(panes[activePane].year);
+  } else {
+    panes[1].kind = otherKind(panes[0].kind);
+  }
+  stepTarget = -1;
+  rememberSettings();
+  renderBars();
+  paintLive();
+  scheduleEngine();
 }
 
 window.addEventListener("pagehide", () => {
