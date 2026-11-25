@@ -1079,6 +1079,13 @@ function drawLayerSplitTo(context, split, activeSat = false) {
   const other = activeSat ? mapBlendCanvas : satBlendCanvas;
   Playback.composite(context, other, active, split, blendMode, WIDTH, HEIGHT);
   overlayYearBoxes(context, split);
+  Playback.drawMapCredits(context, {
+    split,
+    blend: blendMode,
+    width: WIDTH,
+    height: HEIGHT,
+    credits: liveCredits,
+  });
 }
 
 function drawLayerSplit(split, activeSat) {
@@ -2754,6 +2761,8 @@ function sharedNotes(plans) {
   return notes;
 }
 
+let liveCredits = [null, null];
+
 function drawPanes(pair, plans, stampIt, stampBoxes) {
   const shared = sharedNotes(plans);
   plans.forEach((plan, side) => {
@@ -2762,7 +2771,18 @@ function drawPanes(pair, plans, stampIt, stampBoxes) {
     const placement = compareMode
       ? { box: side ? "right" : "left", credit: side ? "right" : "left", yearBox: stampBoxes }
       : undefined;
-    renderSide(side ? satBlendCtx : mapBlendCtx, plan, frames[pair[side]].label, kind, notes, stampIt, placement);
+    const credit = kind === "map" ? mapCredit(plan.shown || plan.edition) : satelliteCredit(plan.shown || plan.edition);
+    const overlay = kind === "map" && Boolean(plan.edition) && !plan.empty;
+    liveCredits[side] = {
+      kind,
+      text: credit,
+      overlay,
+      anchor: placement?.credit || "right",
+    };
+    renderSide(side ? satBlendCtx : mapBlendCtx, plan, frames[pair[side]].label, kind, notes, stampIt, {
+      ...placement,
+      creditLine: !overlay,
+    });
   });
 }
 

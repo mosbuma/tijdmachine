@@ -180,9 +180,50 @@
     context.restore();
   }
 
+  function drawMapCredits(context, { split, blend, width, height, credits }) {
+    const t = Math.min(1, Math.max(0, Number(split) || 0));
+    const fade = blend === "fade";
+    const photoOnRight = (credits || []).some((credit, side) => {
+      if (!credit || credit.overlay || credit.anchor === "left" || !credit.text) return false;
+      if (fade) return true;
+      return side === 0 ? t > 0.02 : t <= 0.02;
+    });
+    (credits || []).forEach((credit, side) => {
+      if (!credit?.overlay || !credit.text) return;
+      let left = 0;
+      let right = width;
+      if (!fade) {
+        if (side === 0) {
+          if (t <= 0.02) return;
+          left = (1 - t) * width;
+        } else {
+          if (t >= 0.98) return;
+          right = (1 - t) * width;
+        }
+      } else if (side === 0 && t <= 0.02) {
+        return;
+      }
+      if (right - left < 48) return;
+      const stacked = fade && side === 0 && credits[1]?.overlay;
+      const lift = (right > width - 2 && photoOnRight ? 28 : 0) + (stacked ? 18 : 0);
+      context.save();
+      context.font = "13px 'Segoe UI', 'Helvetica Neue', sans-serif";
+      context.fillStyle = "#000000";
+      context.textAlign = "right";
+      context.textBaseline = "alphabetic";
+      context.shadowBlur = 0;
+      context.beginPath();
+      context.rect(left, 0, right - left, height);
+      context.clip();
+      context.fillText(credit.text, right - 12, height - 16 - lift);
+      context.restore();
+    });
+  }
+
   function shareUrl(href, state) {
     const url = new URL(href, "https://local.invalid/");
     for (const key of SHARE_KEYS) url.searchParams.delete(key);
+    url.searchParams.delete("t");
     const round = (value, digits) => String(Math.round(value * (10 ** digits)) / (10 ** digits));
     url.searchParams.set("x", round(state.x, 2));
     url.searchParams.set("y", round(state.y, 2));
@@ -831,6 +872,7 @@
         notes,
         box: compare ? (side ? "right" : "left") : "left",
         credit: compare ? (side ? "right" : "left") : "right",
+        creditLine: !(kind === "map" && img),
         width: W,
         height: H,
         fallback: kind === "map" ? "Esri Nederland; Kadaster" : "Beeldmateriaal.nl",
@@ -841,6 +883,24 @@
       paintPane(leftCanvas, 0);
       paintPane(rightCanvas, 1);
       composite(ctx, rightCanvas, leftCanvas, split, blend, W, H);
+      drawMapCredits(ctx, {
+        split,
+        blend,
+        width: W,
+        height: H,
+        credits: [0, 1].map((side) => {
+          const at = paneIndex(side);
+          const kind = kinds[side];
+          const id = movie[kind][at];
+          const fallback = kind === "map" ? "Esri Nederland; Kadaster" : "Beeldmateriaal.nl";
+          return {
+            kind,
+            text: movie[`${kind}Credit`][at] || fallback,
+            overlay: kind === "map" && id != null && images[id],
+            anchor: compare ? (side ? "right" : "left") : "right",
+          };
+        }),
+      });
       hasPresented = true;
     }
 
@@ -1213,6 +1273,7 @@
     drawMissing,
     stamp,
     shareUrl,
+    drawMapCredits,
     copyText,
     nextIndex,
     compareTiming,
